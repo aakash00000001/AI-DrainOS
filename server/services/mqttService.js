@@ -22,6 +22,7 @@ const axios = require("axios");
 const pool = require("../config/db");
 
 const floodRisk = require("./floodRiskService");
+const floodForecast = require("./floodForecastService");
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
@@ -41,6 +42,9 @@ const aiState = new Map();
 
 // Per-drain flood risk emission state (dedupe for floodRiskUpdate)
 const floodRiskState = new Map();
+
+// Per-drain flood forecast emission state (dedupe for forecastUpdate)
+const forecastState = new Map();
 
 let aiUnreachableLoggedAt = null;
 
@@ -263,6 +267,26 @@ function shouldEmitFloodRisk(drainId, riskScore, riskLevel) {
 
   if (levelChanged || scoreChanged) {
     floodRiskState.set(drainId, { score: riskScore, level: riskLevel });
+    return true;
+  }
+
+  return false;
+}
+
+// --------------------------------------------------
+// Forecast update dedupe - emit a forecastUpdate event only when
+// the worst predicted (60 min) level changed or its score moved
+// by at least 2 points.
+// --------------------------------------------------
+
+function shouldEmitForecast(drainId, score, level) {
+  const prev = forecastState.get(drainId);
+
+  const levelChanged = !prev || prev.level !== level;
+  const scoreChanged = !prev || Math.abs(prev.score - score) >= 2;
+
+  if (levelChanged || scoreChanged) {
+    forecastState.set(drainId, { score, level });
     return true;
   }
 
@@ -558,6 +582,66 @@ async function handleMessage(topic, rawPayload, context = {}) {
     }
 
     // --------------------------------------------------
+    // 7b. Predictive flood forecast (15/30/60 min) + early
+    // warning. Best-effort: a forecast problem must never break
+    // the existing pipeline.
+    // --------------------------------------------------
+
+    let forecast = null;
+
+    try {
+      forecast = await floodForecast.getDrainForecast(drainId);
+
+      if (forecast && forecast.status === "ready" && forecast.worst) {
+        // Forecast-driven early warning alert (predicted HIGH ->
+        // Medium, CRITICAL -> Critical, upgraded in place).
+        const predicted = forecast.worst.predictedRiskLevel;
+
+        if (predicted === "CRITICAL" || predicted === "HIGH") {
+          const severity = predicted === "CRITICAL" ? "Critical" : "Medium";
+
+          await floodForecast.ensureForecastAlert({
+            drainId,
+            location: drain.location,
+            severity,
+            message: `Flood forecast ${predicted} within ${forecast.worst.forecastMinutes} min (score ${forecast.worst.predictedRiskScore}/100) at ${drain.location}`
+          });
+        } else {
+          // Prediction dropped below HIGH -> resolve forecast alerts
+          await floodForecast.resolveForecastAlerts(drainId);
+        }
+
+        // Emit forecastUpdate only when something meaningful changed
+        if (
+          shouldEmitForecast(
+            drainId,
+            forecast.worst.predictedRiskScore,
+            forecast.worst.predictedRiskLevel
+          )
+        ) {
+          io.emit("forecastUpdate", {
+            drainId: Number(drainId),
+            sensorId: Number(resolvedSensorId),
+            currentRiskLevel: risk ? risk.riskLevel : null,
+            currentWaterLevel: reading.water_level,
+            method: forecast.method,
+            trendDirection: forecast.trendDirection,
+            waterTrendPerMinute: forecast.waterTrendPerMinute,
+            horizons: forecast.horizons,
+            worst: forecast.worst,
+            timestamp: reading.timestamp || new Date().toISOString()
+          });
+        }
+      } else if (forecast) {
+        // Insufficient history - no prediction possible right now.
+        await floodForecast.resolveForecastAlerts(drainId);
+      }
+    } catch (forecastErr) {
+      console.log("⚠️ Flood forecast skipped:", forecastErr.message);
+      forecast = null;
+    }
+
+    // --------------------------------------------------
     // 8. Emit live update
     // --------------------------------------------------
 
@@ -572,6 +656,18 @@ async function handleMessage(topic, rawPayload, context = {}) {
       riskScore: risk ? risk.riskScore : null,
       riskLevel: risk ? risk.riskLevel : null,
       riskTrend: risk ? risk.trend.label : null,
+      forecast60Score:
+        forecast && forecast.status === "ready" && forecast.worst
+          ? forecast.worst.predictedRiskScore
+          : null,
+      forecast60Level:
+        forecast && forecast.status === "ready" && forecast.worst
+          ? forecast.worst.predictedRiskLevel
+          : null,
+      forecastTrendDirection:
+        forecast && forecast.status === "ready"
+          ? forecast.trendDirection
+          : null,
       timestamp: reading.timestamp || new Date().toISOString()
     };
 
@@ -579,7 +675,10 @@ async function handleMessage(topic, rawPayload, context = {}) {
 
     console.log(
       `📡 MQTT ${topic} → ${drain.location} water=${reading.water_level}% gas=${reading.gas_level} temp=${reading.temperature}°C prediction=${prediction} (${source})` +
-        (risk ? ` risk=${risk.riskScore}(${risk.riskLevel})` : "")
+        (risk ? ` risk=${risk.riskScore}(${risk.riskLevel})` : "") +
+        (update.forecast60Level
+          ? ` forecast60=${update.forecast60Score}(${update.forecast60Level})`
+          : "")
     );
 
     return { status: "accepted", ...update };

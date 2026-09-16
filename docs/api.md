@@ -190,6 +190,7 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
   - `total_cleanings` / `robot_operations` / `total_missions`: mission records.
   - `blockages_detected`: open Critical alerts.
   - `flood_predictions`: sensor readings count.
+  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)) and `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)).
 
 ### `GET /api/analytics/monthly`
 - **Access**: Public / Authenticated

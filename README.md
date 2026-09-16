@@ -80,6 +80,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **Real-time Notifications**: Instant Socket.IO notifications for critical alerts, low battery warnings, and completed cleanings.
 - **MQTT IoT Sensor Integration**: Consumes live readings from MQTT-capable IoT drain sensors (or the bundled `simulate:mqtt` simulator), validates them, persists to PostgreSQL, runs AI prediction, and streams live `sensorUpdate` events.
 - **Flood Risk Intelligence & Early Warning**: An explainable, deterministic Flood Risk Score (0–100) + risk level (LOW/MODERATE/HIGH/CRITICAL) computed from water/gas/temperature plus a rising-water trend component, combined with the AI prediction and broadcast live via `floodRiskUpdate`.
+- **Predictive Flood Forecasting & 15/30/60-Minute Early Warning**: An "Explainable Baseline Forecast" that fits a time-aware water-level trend and projects each drain's future risk at 15 / 30 / 60 minutes (reusing the flood risk engine), streamed live via `forecastUpdate`, with dedicated `Flood Forecast` early-warning alerts and an honest "insufficient history" status (no fabricated confidence).
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -94,6 +95,8 @@ graph TD
     Broker -->|Subscribed Readings| Server
     Server -->|Sensor Readings + History| Risk["Flood Risk Engine<br/>(risk score 0-100 + level)"]
     Risk -->|floodRiskUpdate event| UI
+    Risk -->|Predicted Water + History| Forecast["Forecast Engine<br/>(15/30/60 min projections)"]
+    Forecast -->|forecastUpdate event| UI
     Sim["Sensor Simulator Script"] -->|Telemetry Inserts| DB
 ```
 
@@ -139,6 +142,21 @@ average risk + HIGH/CRITICAL counts.
 📄 Full documentation (formula, weights, thresholds, API, alerts, limitations):
 [docs/flood-risk.md](docs/flood-risk.md).
 
+## 15c. Predictive Flood Forecasting & 15/30/60-Minute Early Warning
+The forecasting layer (`server/services/floodForecastService.js`) answers "is this
+drain about to flood within the hour?". It fits a **time-aware** water-level trend
+(per-minute linear regression over the most recent readings), **projects** water
+level at **15 / 30 / 60 minutes** (clamped 0–100), then feeds each projected value
+through the **existing** flood risk engine to get a predicted risk level per
+horizon. A worst-horizon early-warning alert (`Flood Forecast`) is created for
+predicted HIGH/CRITICAL and resolved once the prediction drops. Everything is
+streamed live via `forecastUpdate`, the dashboard adds a **Predictive Flood
+Forecast** panel, and the model is deliberately structured behind the service so a
+trained ML model can replace it later without touching routes, UI or tests.
+
+📄 Full documentation (method, formula, data, alerts, events, API, ML drop-in):
+[docs/forecasting.md](docs/forecasting.md).
+
 ## 16. Manual Mission Control
 UI interface (`pages/MissionControl.jsx`) enabling operators to manually select specific drains and dispatch available robots on demand.
 
@@ -169,8 +187,9 @@ databases by `scripts/dbInit.js` without destroying data.
 - `criticalAlert`: Fired when a **new** Critical alert is created.
 - `batteryLow`: Fired when a robot battery drops <= 20% and is routed to a charging station.
 - `dashboardUpdate`: Emitted every 5s with latest system stat counters.
-- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, plus additive flood risk score/level/trend).
+- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, plus additive flood risk score/level/trend and 60-min forecast score/level/trend).
 - `floodRiskUpdate`: Emitted when a drain's Flood Risk level changes (or its score moves ≥ 2 points) with the explainable risk breakdown + AI prediction.
+- `forecastUpdate`: Emitted when a drain's worst predicted (60-min) forecast level changes (or its score moves ≥ 2 points) with the 15/30/60-minute horizon projections and trend information.
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -263,12 +282,15 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **88 tests** covering auth, RBAC, drains, robots, missions,
+The suite currently includes **122 tests** covering auth, RBAC, drains, robots, missions,
 alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
 database mapping, AI prediction, socket emission, alert escalation, and broker-failure
-resilience) and the flood risk engine (normalization, trend, classification, historical
+resilience), the flood risk engine (normalization, trend, classification, historical
 readings, MQTT → risk integration, `floodRiskUpdate` dedupe, alert dedup/recovery, AI
-fallback, and the new risk REST endpoints).
+fallback, and the risk REST endpoints) and the predictive flood forecast engine
+(time-series cleaning, trend fit, direction labels, projections, honest status handling,
+determinism, no-fabricated-confidence contract, `Flood Forecast` alerts,
+`forecastUpdate` dedupe/emission, and the forecast REST/analytics endpoints).
 
 ## 32. Project Folder Structure
 ```
@@ -303,7 +325,8 @@ AI-DrainOS/
 │   ├── database.md
 │   ├── workflow.md
 │   ├── mqtt.md
-│   └── flood-risk.md
+│   ├── flood-risk.md
+│   └── forecasting.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example
@@ -343,4 +366,4 @@ Mission Assigned → Target GIS Set → Live Loop Movement → Destination Reach
 ## 40. Future Enhancements
 - Integration with OpenStreetMap OSRM routing engine for real-world road navigation.
 - Physical IoT sensor device hardware integration via MQTT protocol.
-- Deep learning neural network models for predictive flood forecasting.
+- Swap the Explainable Baseline Forecast for a trained deep-learning flood forecasting model (the service contract in [docs/forecasting.md](docs/forecasting.md) is already structured for this).

@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require("../config/db");
 
 const floodRisk = require("../services/floodRiskService");
+const floodForecast = require("../services/floodForecastService");
 
 router.get("/", async (req, res) => {
 
@@ -45,6 +46,7 @@ router.get("/", async (req, res) => {
     );
 
     const riskSummary = await floodRisk.getRiskSummary();
+    const forecastSummary = await floodForecast.getForecastSummary({ force: true });
 
     res.json({
       total_cleanings: Number(totalCleanings.rows[0].count),
@@ -60,7 +62,14 @@ router.get("/", async (req, res) => {
       risk_moderate: riskSummary.counts.moderate,
       risk_high: riskSummary.counts.high,
       risk_critical: riskSummary.counts.critical,
-      risk_distribution: riskSummary.distribution
+      risk_distribution: riskSummary.distribution,
+      forecast_average_risk: forecastSummary.averagePredictedRiskScore,
+      forecast_low: forecastSummary.counts.low,
+      forecast_moderate: forecastSummary.counts.moderate,
+      forecast_high: forecastSummary.counts.high,
+      forecast_critical: forecastSummary.counts.critical,
+      forecast_distribution: forecastSummary.distribution,
+      forecast_ready: forecastSummary.totalDrains
     });
 
   }
@@ -117,6 +126,17 @@ router.get("/risk", async (req, res) => {
     const run = async () => floodRisk.getRiskSummary({ force });
     const summary = await run();
 
+    res.json(summary);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+router.get("/forecast", async (req, res) => {
+  try {
+    const force = req.query.refresh === "true";
+    const summary = await floodForecast.getForecastSummary({ force });
     res.json(summary);
   } catch (err) {
     console.log(err);

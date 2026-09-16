@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require("../config/db");
 
 const floodRisk = require("../services/floodRiskService");
+const floodForecast = require("../services/floodForecastService");
 const mqttService = require("../services/mqttService");
 
 router.get("/", async (req, res) => {
@@ -86,6 +87,59 @@ router.get("/risk", async (req, res) => {
         distribution: summary.distribution
       },
       topRisk
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/dashboard/forecast - Predictive flood forecast
+// summary (15/30/60 min) plus the highest predicted-risk drain
+// with its horizon forecasts (for the dashboard panel).
+// --------------------------------------------------
+
+router.get("/forecast", async (req, res) => {
+  try {
+    const summary = await floodForecast.getForecastSummary({
+      force: req.query.refresh === "true"
+    });
+
+    let topForecast = null;
+
+    if (summary.topForecast) {
+      const forecast = await floodForecast.getDrainForecast(
+        summary.topForecast.drainId
+      );
+
+      if (forecast) {
+        topForecast = {
+          drainId: forecast.drainId,
+          sensorId: forecast.sensorId,
+          zone: forecast.zone,
+          location: forecast.location,
+          currentWaterLevel: forecast.currentWaterLevel,
+          currentRiskScore: forecast.currentRiskScore,
+          currentRiskLevel: forecast.currentRiskLevel,
+          method: forecast.method,
+          trendDirection: forecast.trendDirection,
+          waterTrendPerMinute: forecast.waterTrendPerMinute,
+          horizons: forecast.horizons,
+          worst: forecast.worst,
+          timestamp: forecast.timestamp
+        };
+      }
+    }
+
+    res.json({
+      summary: {
+        totalDrains: summary.totalDrains,
+        averagePredictedRiskScore: summary.averagePredictedRiskScore,
+        counts: summary.counts,
+        distribution: summary.distribution
+      },
+      topForecast
     });
   } catch (err) {
     console.error(err);

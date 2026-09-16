@@ -148,6 +148,29 @@ function SensorMonitor() {
               </p>
             )}
 
+            {liveUpdate?.forecast60Level && (
+              <p>
+                🔮 60-min Forecast :
+                <strong
+                  style={{
+                    color: {
+                      LOW: "#16a34a",
+                      MODERATE: "#d97706",
+                      HIGH: "#ea580c",
+                      CRITICAL: "#dc2626"
+                    }[liveUpdate.forecast60Level] || "#0f172a"
+                  }}
+                >
+                  {" "}{liveUpdate.forecast60Score}/100 ({liveUpdate.forecast60Level})
+                  {liveUpdate.forecastTrendDirection
+                    ? ` · ${liveUpdate.forecastTrendDirection
+                        .toLowerCase()
+                        .replace(/_/g, " ")}`
+                    : ""}
+                </strong>
+              </p>
+            )}
+
             {liveUpdate && (
               <p>
                 🕒 Last Updated :

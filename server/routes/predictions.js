@@ -4,6 +4,7 @@ const axios = require("axios");
 const pool = require("../config/db");
 
 const floodRisk = require("../services/floodRiskService");
+const floodForecast = require("../services/floodForecastService");
 const mqttService = require("../services/mqttService");
 
 const AI_SERVICE_URL =
@@ -187,6 +188,38 @@ router.get("/risk/:drainId", async (req, res) => {
     console.log(err.message);
 
     res.status(500).json({ error: "Flood risk calculation failed" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/predictions/forecast/:drainId
+// --------------------------------------------------
+// Predictive flood forecast (15/30/60 minutes) for a single
+// drain. Uses the same public model as GET /api/predictions (no
+// auth) and does not expose server configuration. No confidence
+// values are fabricated - the model is an explainable baseline.
+// --------------------------------------------------
+
+router.get("/forecast/:drainId", async (req, res) => {
+  try {
+    const drainId = Number(req.params.drainId);
+
+    if (!Number.isInteger(drainId) || drainId <= 0) {
+      return res.status(400).json({ error: "Invalid drain id" });
+    }
+
+    const forecast = await floodForecast.getDrainForecast(drainId);
+
+    if (!forecast) {
+      return res.status(404).json({ error: "Drain or sensor not found" });
+    }
+
+    res.json(forecast);
+  } catch (err) {
+    console.log("========== FLOOD FORECAST API ERROR ==========");
+    console.log(err.message);
+
+    res.status(500).json({ error: "Flood forecast calculation failed" });
   }
 });
 
