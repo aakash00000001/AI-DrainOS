@@ -10,6 +10,7 @@
     "db:setup:fresh": "node scripts/dbSetup.js --fresh",
     "simulate": "node scripts/simulateSensors.js",
     "simulate:once": "node scripts/simulateSensors.js --once",
+    "simulate:mqtt": "node scripts/simulateMqtt.js",
     "test": "node --test --test-concurrency=1 \"tests/*.test.js\"",
     "test:watch": "node --test --watch --test-concurrency=1 \"tests/*.test.js\""
   },
@@ -21,6 +22,7 @@
     "express": "^5.2.1",
     "express-validator": "^7.3.2",
     "jsonwebtoken": "^9.0.3",
+    "mqtt": "^5.15.2",
     "pg": "^8.22.0",
     "react-leaflet-drift-marker": "^4.0.0",
     "socket.io": "^4.8.3"

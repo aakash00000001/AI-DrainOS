@@ -78,6 +78,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **Battery Management & Charging**: Autonomous routing to designated charging stations when battery drops below low threshold (20%).
 - **User Management & RBAC**: Admin management of system users, role privileges, and account activation/deactivation.
 - **Real-time Notifications**: Instant Socket.IO notifications for critical alerts, low battery warnings, and completed cleanings.
+- **MQTT IoT Sensor Integration**: Consumes live readings from MQTT-capable IoT drain sensors (or the bundled `simulate:mqtt` simulator), validates them, persists to PostgreSQL, runs AI prediction, and streams live `sensorUpdate` events.
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -88,6 +89,8 @@ graph TD
     UI["React Frontend (Vite)"] <-->|REST API + WebSockets| Server["Node.js / Express Backend"]
     Server <-->|SQL Queries| DB[("PostgreSQL DB")]
     Server <-->|HTTP POST /predict| AI["Python AI Service"]
+    IoT["IoT Sensors / MQTT Simulator"] -->|MQTT ai-drainos/drains/+/sensors/+| Broker["MQTT Broker"]
+    Broker -->|Subscribed Readings| Server
     Sim["Sensor Simulator Script"] -->|Telemetry Inserts| DB
 ```
 
@@ -145,6 +148,7 @@ Database tables (`users`, `refresh_tokens`, `settings`, `drains`, `robots`, `sen
 - `criticalAlert`: Fired when a **new** Critical alert is created.
 - `batteryLow`: Fired when a robot battery drops <= 20% and is routed to a charging station.
 - `dashboardUpdate`: Emitted every 5s with latest system stat counters.
+- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, timestamp).
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -157,6 +161,13 @@ Database tables (`users`, `refresh_tokens`, `settings`, `drains`, `robots`, `sen
 - `AI_SERVICE_URL` (default: http://127.0.0.1:5001)
 - `OPENWEATHER_API_KEY` (optional key for live weather data in `WeatherMonitor` / `WeatherForm`)
 - `FRONTEND_URL` (default: http://localhost:5173, used in Socket.IO CORS and the backend REST CORS allow-list; supports comma-separated origins when set)
+- `MQTT_BROKER_URL` (default: mqtt://localhost:1883)
+- `MQTT_USERNAME` (optional broker auth)
+- `MQTT_PASSWORD` (optional broker auth)
+- `MQTT_CLIENT_ID` (default: ai-drainos-backend)
+- `MQTT_TOPIC_PREFIX` (default: ai-drainos)
+- `MQTT_ENABLED` (default: true, set false to disable MQTT)
+- `MQTT_SIM_INTERVAL` (seconds between `simulate:mqtt` publish rounds)
 - `VITE_API_URL` (default: http://localhost:5000/api)
 - `VITE_SOCKET_URL` (default: http://localhost:5000)
 
@@ -205,14 +216,35 @@ cd server
 npm run simulate
 ```
 
+## 30b. How to Start MQTT Broker + MQTT Sensor Simulator
+Start an MQTT broker (Docker recommended, no Docker needed if you install
+[Mosquitto](https://mosquitto.org/download/) locally):
+```bash
+# Option 1: Docker
+docker compose up -d mosquitto
+
+# Option 2: local Mosquitto on Windows
+mosquitto -v
+```
+
+Then start the MQTT simulator (from `server/`):
+```bash
+npm run simulate:mqtt
+```
+
+MQTT topics, payload format, dashboard wiring, and a step-by-step run/verify
+guide are documented in [docs/mqtt.md](docs/mqtt.md).
+
 ## 31. Testing Instructions
 Execute automated API test suite against safe test database:
 ```bash
 cd server
 npm test
 ```
-The suite currently includes **37 tests** covering auth, RBAC, drains, robots, missions,
-alerts, settings, analytics, and workflow integration.
+The suite currently includes **56 tests** covering auth, RBAC, drains, robots, missions,
+alerts, settings, analytics, workflow integration, and MQTT (topic parsing, payload
+validation, database mapping, AI prediction, socket emission, alert escalation, and
+broker-failure resilience).
 
 ## 32. Project Folder Structure
 ```

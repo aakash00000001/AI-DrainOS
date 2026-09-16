@@ -6,6 +6,7 @@ const { Server } = require("socket.io");
 const app = require("./app");
 
 const { assignMission } = require("./services/missionEngine");
+const { startMqttService } = require("./services/mqttService");
 
 require("dotenv").config();
 
@@ -570,4 +571,6 @@ server.listen(PORT, () => {
   console.log(
     `🚀 Server running on port ${PORT}`
   );
+
+  startMqttService({ io });
 });

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import socket from "../services/socket";
 import { API_URL } from "../services/api";
 
 function SensorMonitor() {
 
   const [sensors, setSensors] = useState([]);
+  const [live, setLive] = useState({});
 
   const loadSensors = () => {
 
@@ -33,6 +35,26 @@ function SensorMonitor() {
 
   }, []);
 
+  useEffect(() => {
+
+    const onSensorUpdate = (data) => {
+
+      setLive((prev) => ({
+        ...prev,
+        [data.sensorId]: {
+          ...data,
+          receivedAt: new Date()
+        }
+      }));
+
+    };
+
+    socket.on("sensorUpdate", onSensorUpdate);
+
+    return () => socket.off("sensorUpdate", onSensorUpdate);
+
+  }, []);
+
   return (
 
     <div className="sensor-box">
@@ -49,28 +71,41 @@ function SensorMonitor() {
 
       {
 
-        sensors.map((sensor) => (
+        sensors.map((sensor) => {
+
+          const liveUpdate = live[sensor.id];
+
+          const predictionColor = {
+            HIGH: "#dc2626",
+            MEDIUM: "#d97706",
+            LOW: "#16a34a"
+          }[liveUpdate?.prediction];
+
+          return (
 
           <div
             key={sensor.id}
             className="sensor-data"
           >
 
-            <h3>{sensor.zone_name}</h3>
+            <h3>
+              {sensor.zone_name}
+              {liveUpdate && " ⚡"}
+            </h3>
 
             <p>
               🌊 Water Level :
-              <strong> {sensor.water_level}%</strong>
+              <strong> {liveUpdate ? liveUpdate.water_level : sensor.water_level}%</strong>
             </p>
 
             <p>
               💨 Gas Level :
-              <strong> {sensor.gas_level} ppm</strong>
+              <strong> {liveUpdate ? liveUpdate.gas_level : sensor.gas_level} ppm</strong>
             </p>
 
             <p>
               🌡 Temperature :
-              <strong> {sensor.temperature}°C</strong>
+              <strong> {liveUpdate ? liveUpdate.temperature : sensor.temperature}°C</strong>
             </p>
 
             <p>
@@ -85,11 +120,29 @@ function SensorMonitor() {
               </strong>
             </p>
 
+            {liveUpdate?.prediction && (
+              <p>
+                🤖 AI Prediction :
+                <strong style={{ color: predictionColor }}>
+                  {" "}{liveUpdate.prediction}
+                </strong>
+              </p>
+            )}
+
+            {liveUpdate && (
+              <p>
+                🕒 Last Updated :
+                <strong> {liveUpdate.receivedAt.toLocaleTimeString()}</strong>
+              </p>
+            )}
+
             <hr />
 
           </div>
 
-        ))
+          );
+
+        })
 
       }
 
