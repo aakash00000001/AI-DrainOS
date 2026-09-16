@@ -3,6 +3,9 @@ const router = express.Router();
 const axios = require("axios");
 const pool = require("../config/db");
 
+const floodRisk = require("../services/floodRiskService");
+const mqttService = require("../services/mqttService");
+
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
 
@@ -50,7 +53,7 @@ function fallbackPrediction(sensor, thresholds) {
 
 router.get("/", async (req, res) => {
 
-  try {
+    try {
 
     const result = await pool.query(`
       SELECT
@@ -126,6 +129,65 @@ router.get("/", async (req, res) => {
 
 }
 
+});
+
+// --------------------------------------------------
+// GET /api/predictions/risk/:drainId
+// --------------------------------------------------
+// Flood Risk Intelligence detail for a single drain: risk score,
+// risk level, explainable breakdown + factors, and the AI
+// prediction (reusing the MQTT service's throttled + fallback AI
+// pipeline so no duplicate AI calls are made).
+//
+// Follows the existing public predictions model (no auth), the
+// same as GET /api/predictions. No server configuration is
+// exposed.
+// --------------------------------------------------
+
+router.get("/risk/:drainId", async (req, res) => {
+  try {
+    const drainId = Number(req.params.drainId);
+
+    if (!Number.isInteger(drainId) || drainId <= 0) {
+      return res.status(400).json({ error: "Invalid drain id" });
+    }
+
+    const detail = await floodRisk.buildDrainRiskDetail(drainId);
+
+    if (!detail) {
+      return res.status(404).json({ error: "Drain or sensor not found" });
+    }
+
+    const { prediction, source } = await mqttService.getPrediction(
+      drainId,
+      {
+        water_level: detail.waterLevel,
+        gas_level: detail.gasLevel,
+        temperature: detail.temperature
+      },
+      mqttService.defaultPredict
+    );
+
+    res.json({
+      drainId,
+      sensorId: detail.sensorId,
+      riskScore: detail.riskScore,
+      riskLevel: detail.riskLevel,
+      prediction,
+      predictionSource: source,
+      breakdown: detail.breakdown,
+      factors: detail.factors,
+      waterLevel: detail.waterLevel,
+      gasLevel: detail.gasLevel,
+      temperature: detail.temperature,
+      timestamp: detail.timestamp
+    });
+  } catch (err) {
+    console.log("========== FLOOD RISK API ERROR ==========");
+    console.log(err.message);
+
+    res.status(500).json({ error: "Flood risk calculation failed" });
+  }
 });
 
 module.exports = router;

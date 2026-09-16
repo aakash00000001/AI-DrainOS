@@ -10,7 +10,10 @@ const ALLOWED_KEYS = [
   "warning_threshold",
   "battery_low_threshold",
   "sensor_sim_interval",
-  "notification_enabled"
+  "notification_enabled",
+  "risk_moderate_min",
+  "risk_high_min",
+  "risk_critical_min"
 ];
 
 // --------------------------------------------------

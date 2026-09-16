@@ -209,6 +209,44 @@ function AnalyticsReport() {
 
 </div>
 
+{analytics.risk_average_score !== undefined && (
+  <>
+    <h3>🌊 Flood Risk Summary</h3>
+
+    <div className="analytics-grid">
+
+      <div className="analytics-item">
+        <FaChartLine className="analytics-icon"/>
+        <h3>{analytics.risk_average_score}</h3>
+        <p>Average Risk</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.risk_low}</h3>
+        <p>LOW Drains</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.risk_moderate}</h3>
+        <p>MODERATE Drains</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.risk_high}</h3>
+        <p>HIGH Drains</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.risk_critical}</h3>
+        <p>CRITICAL Drains</p>
+      </div>
+
+    </div>
+
+    <br/>
+  </>
+)}
+
 <br/>
 
 <h3>📊 System Analytics</h3>

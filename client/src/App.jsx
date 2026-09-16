@@ -9,6 +9,7 @@ import MissionControl from "./pages/MissionControl";
 
 import DashboardLayout from "./components/layout/DashboardLayout";
 import DashboardCards from "./components/DashboardCards";
+import FloodRiskPanel from "./components/FloodRiskPanel";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -208,6 +209,8 @@ function App() {
           <DashboardCards
             dashboard={dashboard}
           />
+
+          <FloodRiskPanel />
 
           <div className="sections">
 

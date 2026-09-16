@@ -129,6 +129,25 @@ function SensorMonitor() {
               </p>
             )}
 
+            {liveUpdate?.riskScore !== undefined && liveUpdate?.riskScore !== null && (
+              <p>
+                🌊 Flood Risk :
+                <strong
+                  style={{
+                    color: {
+                      LOW: "#16a34a",
+                      MODERATE: "#d97706",
+                      HIGH: "#ea580c",
+                      CRITICAL: "#dc2626"
+                    }[liveUpdate.riskLevel] || "#0f172a"
+                  }}
+                >
+                  {" "}{liveUpdate.riskScore}/100 ({liveUpdate.riskLevel})
+                  {liveUpdate.riskTrend ? ` · ${liveUpdate.riskTrend}` : ""}
+                </strong>
+              </p>
+            )}
+
             {liveUpdate && (
               <p>
                 🕒 Last Updated :

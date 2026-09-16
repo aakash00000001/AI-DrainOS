@@ -79,6 +79,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **User Management & RBAC**: Admin management of system users, role privileges, and account activation/deactivation.
 - **Real-time Notifications**: Instant Socket.IO notifications for critical alerts, low battery warnings, and completed cleanings.
 - **MQTT IoT Sensor Integration**: Consumes live readings from MQTT-capable IoT drain sensors (or the bundled `simulate:mqtt` simulator), validates them, persists to PostgreSQL, runs AI prediction, and streams live `sensorUpdate` events.
+- **Flood Risk Intelligence & Early Warning**: An explainable, deterministic Flood Risk Score (0–100) + risk level (LOW/MODERATE/HIGH/CRITICAL) computed from water/gas/temperature plus a rising-water trend component, combined with the AI prediction and broadcast live via `floodRiskUpdate`.
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -91,6 +92,8 @@ graph TD
     Server <-->|HTTP POST /predict| AI["Python AI Service"]
     IoT["IoT Sensors / MQTT Simulator"] -->|MQTT ai-drainos/drains/+/sensors/+| Broker["MQTT Broker"]
     Broker -->|Subscribed Readings| Server
+    Server -->|Sensor Readings + History| Risk["Flood Risk Engine<br/>(risk score 0-100 + level)"]
+    Risk -->|floodRiskUpdate event| UI
     Sim["Sensor Simulator Script"] -->|Telemetry Inserts| DB
 ```
 
@@ -123,6 +126,19 @@ Background utility (`scripts/simulateSensors.js`) inserting realistic sensor tel
 ## 15. AI Flood Prediction
 Machine learning integration (`routes/predictions.js`) forwarding live sensor data to the Python AI service, with automatic fallback to local threshold rules if the AI endpoint is unreachable.
 
+## 15b. Flood Risk Intelligence & Early Warning
+The flood risk engine (`server/services/floodRiskService.js`) computes an explainable
+**Risk Score (0–100)** and **Risk Level (LOW/MODERATE/HIGH/CRITICAL)** from
+water (50%), gas (15%), temperature (10%) and a rising-water trend component
+(25%), using a minimal historical readings table (`sensor_readings`). It combines
+with the existing AI prediction, drives early-warning alerts, and broadcasts live
+updates via the `floodRiskUpdate` Socket.IO event. The dashboard shows the current
+highest-risk drain with a factor-by-factor breakdown, and analytics now include
+average risk + HIGH/CRITICAL counts.
+
+📄 Full documentation (formula, weights, thresholds, API, alerts, limitations):
+[docs/flood-risk.md](docs/flood-risk.md).
+
 ## 16. Manual Mission Control
 UI interface (`pages/MissionControl.jsx`) enabling operators to manually select specific drains and dispatch available robots on demand.
 
@@ -141,14 +157,20 @@ JWT bearer authentication with bcrypt password hashing.
 Comprehensive list of REST endpoints documented in [docs/api.md](docs/api.md).
 
 ## 21. Database Tables
-Database tables (`users`, `refresh_tokens`, `settings`, `drains`, `robots`, `sensors`, `alerts`, `missions`, `charging_stations`, `reports`) documented in [docs/database.md](docs/database.md).
+Database tables (`users`, `refresh_tokens`, `settings`, `drains`, `robots`, `sensors`,
+`sensor_readings`, `alerts`, `missions`, `charging_stations`, `reports`) documented in
+[docs/database.md](docs/database.md). `sensor_readings` is the minimal flood-risk
+history table (see [docs/flood-risk.md](docs/flood-risk.md)); an idempotent migration
+(`database/migrations/002_sensor_readings.sql`) is applied automatically to existing
+databases by `scripts/dbInit.js` without destroying data.
 
 ## 22. Important Socket.IO Events
 - `drainCleaned`: Fired when a robot reaches target drain and completes cleaning.
 - `criticalAlert`: Fired when a **new** Critical alert is created.
 - `batteryLow`: Fired when a robot battery drops <= 20% and is routed to a charging station.
 - `dashboardUpdate`: Emitted every 5s with latest system stat counters.
-- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, timestamp).
+- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, plus additive flood risk score/level/trend).
+- `floodRiskUpdate`: Emitted when a drain's Flood Risk level changes (or its score moves ≥ 2 points) with the explainable risk breakdown + AI prediction.
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -241,10 +263,12 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **56 tests** covering auth, RBAC, drains, robots, missions,
-alerts, settings, analytics, workflow integration, and MQTT (topic parsing, payload
-validation, database mapping, AI prediction, socket emission, alert escalation, and
-broker-failure resilience).
+The suite currently includes **88 tests** covering auth, RBAC, drains, robots, missions,
+alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
+database mapping, AI prediction, socket emission, alert escalation, and broker-failure
+resilience) and the flood risk engine (normalization, trend, classification, historical
+readings, MQTT → risk integration, `floodRiskUpdate` dedupe, alert dedup/recovery, AI
+fallback, and the new risk REST endpoints).
 
 ## 32. Project Folder Structure
 ```
@@ -269,14 +293,17 @@ AI-DrainOS/
 │   ├── tests/
 │   ├── app.js
 │   └── index.js
-├── database/                # SQL Schema and Seed data
+├── database/                # SQL Schema, Migrations and Seed data
 │   ├── schema.sql
-│   └── seed.sql
+│   ├── seed.sql
+│   └── migrations/002_sensor_readings.sql
 ├── docs/                    # Architectural & API Documentation
 │   ├── architecture.md
 │   ├── api.md
 │   ├── database.md
-│   └── workflow.md
+│   ├── workflow.md
+│   ├── mqtt.md
+│   └── flood-risk.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example

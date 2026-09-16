@@ -22,7 +22,10 @@ INSERT INTO settings (key, value) VALUES
 ('warning_threshold', '50'),
 ('battery_low_threshold', '20'),
 ('sensor_sim_interval', '10'),
-('notification_enabled', 'true');
+('notification_enabled', 'true'),
+('risk_moderate_min', '25'),
+('risk_high_min', '50'),
+('risk_critical_min', '75');
 
 -- ------------------------------------------------------------
 -- DRAINS

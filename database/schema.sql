@@ -3,6 +3,7 @@
 -- Run via: node database/setup.js   (or psql -f)
 -- ============================================================
 
+DROP TABLE IF EXISTS sensor_readings CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS settings CASCADE;
 DROP TABLE IF EXISTS reports CASCADE;
@@ -96,6 +97,29 @@ CREATE TABLE sensors (
   status VARCHAR(50) DEFAULT 'Normal',
   recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============================================================
+-- SENSOR READINGS (flood risk history)
+--
+-- Minimal historical table used by the flood risk engine for
+-- trend analysis (Water Trend factor) and risk analytics.
+-- Kept deliberately small on purpose - the live sensors table
+-- above remains the source of truth for current values.
+-- ============================================================
+
+CREATE TABLE sensor_readings (
+  id SERIAL PRIMARY KEY,
+  sensor_id INTEGER NOT NULL REFERENCES sensors(id) ON DELETE CASCADE,
+  drain_id INTEGER NOT NULL REFERENCES drains(id) ON DELETE CASCADE,
+  water_level INTEGER NOT NULL,
+  gas_level INTEGER NOT NULL,
+  temperature NUMERIC(5,2) NOT NULL,
+  recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_sensor_readings_sensor_id ON sensor_readings(sensor_id);
+CREATE INDEX idx_sensor_readings_drain_id ON sensor_readings(drain_id);
+CREATE INDEX idx_sensor_readings_recorded_at ON sensor_readings(recorded_at);
 
 -- ============================================================
 -- ALERTS

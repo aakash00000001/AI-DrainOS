@@ -35,6 +35,25 @@ async function run() {
     console.log("⏭️  Schema already present - skipping schema creation");
   }
 
+  // 1b. Apply idempotent migrations on existing databases.
+  // Every migration file uses CREATE ... IF NOT EXISTS so it can
+  // never destroy data and container restarts stay safe on a
+  // persisted volume.
+  const migrationsDir = path.join(__dirname, "..", "..", "database", "migrations");
+
+  if (fs.existsSync(migrationsDir)) {
+    const files = fs
+      .readdirSync(migrationsDir)
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
+
+    for (const file of files) {
+      const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+      await pool.query(sql);
+      console.log(`✅ Migration applied: ${file}`);
+    }
+  }
+
   // 2. Seed only when there are no users yet
   const userCount = await pool.query("SELECT COUNT(*) AS count FROM users");
 

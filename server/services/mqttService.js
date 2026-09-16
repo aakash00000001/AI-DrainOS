@@ -21,6 +21,8 @@ const axios = require("axios");
 
 const pool = require("../config/db");
 
+const floodRisk = require("./floodRiskService");
+
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
 
@@ -36,6 +38,9 @@ const TOPIC_PATTERN = new RegExp(
 
 // Per-drain AI call cache (values, last call time, prediction)
 const aiState = new Map();
+
+// Per-drain flood risk emission state (dedupe for floodRiskUpdate)
+const floodRiskState = new Map();
 
 let aiUnreachableLoggedAt = null;
 
@@ -245,6 +250,26 @@ async function getPrediction(drainId, reading, predict) {
 }
 
 // --------------------------------------------------
+// Flood risk update dedupe - emit a floodRiskUpdate event only
+// when something meaningful changed (level, or score moved by at
+// least 2 points) so the browser is not flooded by every packet.
+// --------------------------------------------------
+
+function shouldEmitFloodRisk(drainId, riskScore, riskLevel) {
+  const prev = floodRiskState.get(drainId);
+
+  const levelChanged = !prev || prev.level !== riskLevel;
+  const scoreChanged = !prev || Math.abs(prev.score - riskScore) >= 2;
+
+  if (levelChanged || scoreChanged) {
+    floodRiskState.set(drainId, { score: riskScore, level: riskLevel });
+    return true;
+  }
+
+  return false;
+}
+
+// --------------------------------------------------
 // Main message handler (testable without a broker)
 // --------------------------------------------------
 
@@ -381,6 +406,26 @@ async function handleMessage(topic, rawPayload, context = {}) {
     );
 
     // --------------------------------------------------
+    // 4b. Historical reading + trend history (flood risk)
+    // --------------------------------------------------
+
+    let history = [];
+
+    try {
+      // Trend must be computed from readings BEFORE the current
+      // one, so the history is fetched before recording.
+      history = await floodRisk.getWaterHistory(
+        drainId,
+        floodRisk.HISTORY_WINDOW
+      );
+
+      await floodRisk.recordReading(resolvedSensorId, drainId, reading);
+    } catch (riskErr) {
+      console.log("⚠️ Flood risk history could not be recorded:", riskErr.message);
+      history = [];
+    }
+
+    // --------------------------------------------------
     // 5. Drain status + alert workflow (same as simulator)
     // --------------------------------------------------
 
@@ -460,7 +505,60 @@ async function handleMessage(topic, rawPayload, context = {}) {
     );
 
     // --------------------------------------------------
-    // 7. Emit live update
+    // 7. Flood risk intelligence + early warning
+    // --------------------------------------------------
+
+    let risk = null;
+
+    try {
+      const thresholds = await floodRisk.getRiskThresholds();
+
+      risk = floodRisk.calculateFloodRisk({
+        water_level: reading.water_level,
+        gas_level: reading.gas_level,
+        temperature: reading.temperature,
+        history,
+        thresholds
+      });
+
+      // Risk-driven early warning alert (HIGH -> Medium,
+      // CRITICAL -> Critical, upgraded in place when needed).
+      if (risk.riskLevel === "CRITICAL" || risk.riskLevel === "HIGH") {
+        const severity = risk.riskLevel === "CRITICAL" ? "Critical" : "Medium";
+
+        await floodRisk.ensureRiskAlert({
+          drainId,
+          location: drain.location,
+          severity,
+          message: `Flood risk ${risk.riskLevel} (score ${risk.riskScore}/100) at ${drain.location}`
+        });
+      }
+
+      // Emit floodRiskUpdate only when something meaningful changed
+      if (shouldEmitFloodRisk(drainId, risk.riskScore, risk.riskLevel)) {
+        io.emit("floodRiskUpdate", {
+          drainId: Number(drainId),
+          sensorId: Number(resolvedSensorId),
+          riskScore: risk.riskScore,
+          riskLevel: risk.riskLevel,
+          prediction,
+          predictionSource: source,
+          waterLevel: reading.water_level,
+          gasLevel: reading.gas_level,
+          temperature: reading.temperature,
+          breakdown: risk.breakdown,
+          timestamp: reading.timestamp || new Date().toISOString()
+        });
+      }
+    } catch (riskErr) {
+      // A risk engine problem must never break the existing
+      // MQTT -> sensor -> AI -> alert pipeline.
+      console.log("⚠️ Flood risk calculation skipped:", riskErr.message);
+      risk = null;
+    }
+
+    // --------------------------------------------------
+    // 8. Emit live update
     // --------------------------------------------------
 
     const update = {
@@ -471,13 +569,17 @@ async function handleMessage(topic, rawPayload, context = {}) {
       temperature: reading.temperature,
       prediction,
       source,
+      riskScore: risk ? risk.riskScore : null,
+      riskLevel: risk ? risk.riskLevel : null,
+      riskTrend: risk ? risk.trend.label : null,
       timestamp: reading.timestamp || new Date().toISOString()
     };
 
     io.emit("sensorUpdate", update);
 
     console.log(
-      `📡 MQTT ${topic} → ${drain.location} water=${reading.water_level}% gas=${reading.gas_level} temp=${reading.temperature}°C prediction=${prediction} (${source})`
+      `📡 MQTT ${topic} → ${drain.location} water=${reading.water_level}% gas=${reading.gas_level} temp=${reading.temperature}°C prediction=${prediction} (${source})` +
+        (risk ? ` risk=${risk.riskScore}(${risk.riskLevel})` : "")
     );
 
     return { status: "accepted", ...update };
@@ -583,5 +685,7 @@ module.exports = {
   parsePayload,
   validateReading,
   buildTopic,
-  fallbackPrediction
+  fallbackPrediction,
+  defaultPredict,
+  getPrediction
 };

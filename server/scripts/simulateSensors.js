@@ -12,6 +12,8 @@
 
 const pool = require("../config/db");
 
+const floodRisk = require("../services/floodRiskService");
+
 // --------------------------------------------------
 // State (random walk)
 // --------------------------------------------------
@@ -128,6 +130,16 @@ async function simulateRound() {
 
       drain.sensor_id = inserted.rows[0].id;
     }
+
+    // --------------------------------------------------
+    // Historical reading for flood risk trend / analytics
+    // --------------------------------------------------
+
+    await floodRisk.recordReading(drain.sensor_id, drain.id, {
+      water_level: Math.round(waterLevel),
+      gas_level: Math.round(gasLevel),
+      temperature: Number(temperature.toFixed(2))
+    });
 
     // --------------------------------------------------
     // Update drain status
