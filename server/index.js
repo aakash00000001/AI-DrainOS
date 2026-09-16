@@ -7,6 +7,7 @@ const app = require("./app");
 
 const { assignMission } = require("./services/missionEngine");
 const { startMqttService } = require("./services/mqttService");
+const socketHub = require("./services/socketHub");
 
 require("dotenv").config();
 
@@ -24,6 +25,11 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 });
+
+// Share the single Socket.IO instance with services that emit live
+// events (vision inspections). The MQTT service keeps receiving
+// `io` directly and is untouched.
+socketHub.init(io);
 
 // --------------------------------------------------
 // SOCKET CONNECTION

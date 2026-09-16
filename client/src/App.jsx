@@ -12,6 +12,7 @@ import DashboardCards from "./components/DashboardCards";
 import FloodRiskPanel from "./components/FloodRiskPanel";
 import ForecastPanel from "./components/ForecastPanel";
 import MaintenancePanel from "./components/MaintenancePanel";
+import DrainVisionInspection from "./components/DrainVisionInspection";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -87,6 +88,14 @@ function App() {
 
     });
 
+    socket.on("visionInspectionUpdate", (inspection) => {
+
+      toast.info(
+        `👁️ Vision Inspection ${inspection.inspectionLevel} (visual risk ${inspection.visualRiskScore}/100) - ${inspection.location}`
+      );
+
+    });
+
     socket.on("dashboardUpdate", (data) => {
 
       setDashboard(data);
@@ -101,6 +110,7 @@ function App() {
       socket.off("criticalAlert");
       socket.off("batteryLow");
       socket.off("dashboardUpdate");
+      socket.off("visionInspectionUpdate");
 
     };
 
@@ -217,6 +227,10 @@ function App() {
           <ForecastPanel />
 
           <MaintenancePanel />
+
+          <DrainVisionInspection
+            drains={drains}
+          />
 
           <div className="sections">
 

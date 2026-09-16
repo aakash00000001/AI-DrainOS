@@ -333,6 +333,59 @@ function AnalyticsReport() {
   </>
 )}
 
+{analytics.vision_average_visual_risk !== undefined && (
+  <>
+    <h3>👁️ Vision Inspection Summary</h3>
+
+    <div className="analytics-grid">
+
+      <div className="analytics-item">
+        <FaChartLine className="analytics-icon"/>
+        <h3>{analytics.vision_total_inspections}</h3>
+        <p>Total Inspections</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.vision_average_visual_risk}</h3>
+        <p>Avg Visual Risk</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.vision_average_blockage_risk}</h3>
+        <p>Avg Blockage Risk</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.vision_low}</h3>
+        <p>Visual LOW</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.vision_moderate}</h3>
+        <p>Visual MODERATE</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.vision_high}</h3>
+        <p>Visual HIGH</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.vision_critical}</h3>
+        <p>Visual CRITICAL</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.vision_drains_with_issues}</h3>
+        <p>Drains w/ Issues</p>
+      </div>
+
+    </div>
+
+    <br/>
+  </>
+)}
+
 <br/>
 
 <h3>📊 System Analytics</h3>

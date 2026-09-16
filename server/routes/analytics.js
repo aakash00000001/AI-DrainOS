@@ -5,6 +5,7 @@ const pool = require("../config/db");
 const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
 const maintenanceService = require("../services/maintenancePredictionService");
+const visionService = require("../services/drainVisionService");
 
 router.get("/", async (req, res) => {
 
@@ -50,6 +51,17 @@ router.get("/", async (req, res) => {
     const forecastSummary = await floodForecast.getForecastSummary({ force: true });
     const maintenanceSummary = await maintenanceService.getMaintenanceSummary();
 
+    // Vision analytics are additive and best-effort: if the vision
+    // table is unavailable, the existing analytics contract still
+    // responds with the default (zero) vision fields.
+    let visionSummary = null;
+
+    try {
+      visionSummary = await visionService.getVisionAnalytics();
+    } catch (visionErr) {
+      console.log("⚠️ Vision analytics skipped:", visionErr.message);
+    }
+
     res.json({
       total_cleanings: Number(totalCleanings.rows[0].count),
       total_missions: Number(totalMissions.rows[0].count),
@@ -80,7 +92,17 @@ router.get("/", async (req, res) => {
       maintenance_critical: maintenanceSummary.counts.critical,
       maintenance_distribution: maintenanceSummary.distribution,
       maintenance_ready_drains: maintenanceSummary.totalDrains,
-      maintenance_drains_inspection: maintenanceSummary.drainsRequiringInspection.length
+      maintenance_drains_inspection: maintenanceSummary.drainsRequiringInspection.length,
+      vision_total_inspections: visionSummary ? visionSummary.totalInspections : 0,
+      vision_drains_inspected: visionSummary ? visionSummary.drainsInspected : 0,
+      vision_average_visual_risk: visionSummary ? visionSummary.averageVisualRisk : 0,
+      vision_average_blockage_risk: visionSummary ? visionSummary.averageBlockageRisk : 0,
+      vision_low: visionSummary ? visionSummary.counts.low : 0,
+      vision_moderate: visionSummary ? visionSummary.counts.moderate : 0,
+      vision_high: visionSummary ? visionSummary.counts.high : 0,
+      vision_critical: visionSummary ? visionSummary.counts.critical : 0,
+      vision_distribution: visionSummary ? visionSummary.distribution : [],
+      vision_drains_with_issues: visionSummary ? visionSummary.drainsWithVisualIssues : 0
     });
 
   }
@@ -158,6 +180,20 @@ router.get("/forecast", async (req, res) => {
 router.get("/maintenance", async (req, res) => {
   try {
     const data = await maintenanceService.getMaintenanceAnalytics();
+    res.json(data);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/vision - Vision inspection summary
+// --------------------------------------------------
+
+router.get("/vision", async (req, res) => {
+  try {
+    const data = await visionService.getVisionAnalytics();
     res.json(data);
   } catch (err) {
     console.log(err);

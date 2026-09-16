@@ -1,17 +1,60 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
+const multer = require("multer");
 const pool = require("../config/db");
 
 const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
 const maintenanceService = require("../services/maintenancePredictionService");
+const visionService = require("../services/drainVisionService");
 const mqttService = require("../services/mqttService");
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
 
 let aiUnreachableLoggedAt = null;
+
+// --------------------------------------------------
+// Vision image upload (secure multipart handling)
+//
+// - JPG/JPEG/PNG/WEBP only (extension + declared MIME must both
+//   pass, and the actual file bytes are re-checked in the route).
+// - 5 MB cap enforced by multer.
+// - Memory storage: images are processed in memory and never
+//   written to disk or stored in the database.
+// --------------------------------------------------
+
+const visionUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: visionService.MAX_IMAGE_BYTES },
+  fileFilter(req, file, cb) {
+    const name = String(file.originalname || "").toLowerCase();
+    const extOk = visionService.ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext));
+    const mimeOk = visionService.ALLOWED_MIME_TYPES.includes(file.mimetype);
+
+    if (!extOk || !mimeOk) {
+      cb(null, false);
+      return;
+    }
+
+    cb(null, true);
+  }
+});
+
+function handleVisionUpload(req, res, next) {
+  visionUpload.single("image")(req, res, (err) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "Image exceeds the 5 MB limit" });
+      }
+
+      return res.status(400).json({ error: "Invalid image upload: " + err.message });
+    }
+
+    next();
+  });
+}
 
 function logAiUnreachable(message) {
   const now = Date.now();
@@ -254,6 +297,109 @@ router.get("/maintenance/:drainId", async (req, res) => {
     console.log(err.message);
 
     res.status(500).json({ error: "Maintenance prediction failed" });
+  }
+});
+
+// --------------------------------------------------
+// POST /api/predictions/vision/:drainId
+// --------------------------------------------------
+// Baseline computer-vision drain inspection: upload a single
+// image (field "image", JPG/JPEG/PNG/WEBP, max 5 MB), decode and
+// analyze it, and return honest READY or INSUFFICIENT_IMAGE_
+// QUALITY results. The image is processed in memory only - never
+// stored on disk or in the database (metadata is stored only).
+//
+// Same public model as GET /api/predictions (no auth). Invalid
+// drain id -> 400, unknown drain -> 404, invalid image -> 400.
+// --------------------------------------------------
+
+router.post("/vision/:drainId", handleVisionUpload, async (req, res) => {
+  try {
+    const drainId = Number(req.params.drainId);
+
+    if (!Number.isInteger(drainId) || drainId <= 0) {
+      return res.status(400).json({ error: "Invalid drain id" });
+    }
+
+    const drainExists = await pool.query(
+      "SELECT id FROM drains WHERE id = $1",
+      [drainId]
+    );
+
+    if (drainExists.rows.length === 0) {
+      return res.status(404).json({ error: "Drain not found" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        error:
+          "Image file is required (multipart field 'image', JPG/JPEG/PNG/WEBP)"
+      });
+    }
+
+    // Defense in depth: verify the actual bytes are a supported
+    // image regardless of the declared filename/Content-Type.
+    const detectedType = visionService.detectImageType(req.file.buffer);
+
+    if (!detectedType) {
+      return res.status(400).json({
+        error: "Unsupported or invalid image - JPG, JPEG, PNG or WEBP required"
+      });
+    }
+
+    const result = await visionService.analyzeDrainImage(drainId, {
+      buffer: req.file.buffer,
+      mimetype: req.file.mimetype,
+      originalname: req.file.originalname
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: "Drain not found" });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.log("========== VISION INSPECTION API ERROR ==========");
+    console.log(err.message);
+
+    res.status(500).json({ error: "Vision inspection failed" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/predictions/vision/:drainId
+// --------------------------------------------------
+// Latest vision inspection result for a single drain, plus a
+// short history of recent inspections (additive - the latest
+// result is at the root of the response). 404 when the drain has
+// no vision inspection yet.
+// --------------------------------------------------
+
+router.get("/vision/:drainId", async (req, res) => {
+  try {
+    const drainId = Number(req.params.drainId);
+
+    if (!Number.isInteger(drainId) || drainId <= 0) {
+      return res.status(400).json({ error: "Invalid drain id" });
+    }
+
+    const historyLimit = Math.min(
+      Math.max(Number(req.query.history) || 5, 1),
+      20
+    );
+
+    const latest = await visionService.getLatestInspection(drainId, historyLimit);
+
+    if (!latest) {
+      return res.status(404).json({ error: "No vision inspection found for this drain" });
+    }
+
+    res.json(latest);
+  } catch (err) {
+    console.log("========== VISION INSPECTION API ERROR ==========");
+    console.log(err.message);
+
+    res.status(500).json({ error: "Vision inspection lookup failed" });
   }
 });
 

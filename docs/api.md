@@ -163,6 +163,39 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 - **Response** (404): `{ "error": "Drain not found" }`
 - **Response** (400): `{ "error": "Invalid drain id" }`
 
+### `POST /api/predictions/vision/:drainId`
+- **Access**: Public / Authenticated
+- **Request**: `multipart/form-data` with a single `image` field (JPG/JPEG/PNG/WEBP, ≤ 5 MB). Magic bytes are verified server-side (file name / MIME are never trusted alone).
+- **Response** (200 OK): Drain vision inspection result.
+  - `status: "READY"` — visual inspection completed:
+    ```json
+    {
+      "status": "READY",
+      "inspectionLevel": "HIGH",
+      "visualRiskScore": 62,
+      "possibleBlockageScore": 71,
+      "findings": ["dark debris-like region", "low-texture region suggests coating"],
+      "recommendation": "Manual visual inspection recommended",
+      "debrisDetected": true,
+      "robotInspectionRecommended": true,
+      "imageQuality": { "dimensions": { "width": 640, "height": 480 }, "usable": true },
+      "method": "OpenCV Engineering Baseline (Computer Vision) | Local PNG fallback",
+      "analyzedAt": "2026-01-01T12:00:00.000Z"
+    }
+    ```
+    Honest wording only — the payload never contains a `confidence`, `accuracy` or `blocked` claim.
+  - `status: "INSUFFICIENT_IMAGE_QUALITY"` — image could not be analyzed (undecodable, empty, too small, or AI down with a non-PNG image). Never a fabricated result.
+- **Response** (400): `{ "error": "No image file provided" }` | `"Invalid image type"` | `"Image is empty"` | `"Image exceeds the 5MB size limit"` | `"Invalid drain id"` | `"Drain not found"`.
+- See [vision-inspection.md](vision-inspection.md).
+
+### `GET /api/predictions/vision/:drainId`
+- **Access**: Public / Authenticated
+- **Query**: optional `history` (default 1, max 20) — how many recent inspections to include.
+- **Response** (200 OK): Latest inspection (same shape as the POST result, with `status`, inspection level, scores, findings, recommendation, image metadata) plus `history` array of recent inspections from the `drain_vision_inspections` audit table.
+- **Response** (404): `{ "error": "Drain not found" }`
+- **Response** (400): `{ "error": "Invalid drain id" }`
+- See [vision-inspection.md](vision-inspection.md).
+
 ---
 
 ## Alerts, Settings & Dashboard
@@ -220,7 +253,7 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
   - `total_cleanings` / `robot_operations` / `total_missions`: mission records.
   - `blockages_detected`: open Critical alerts.
   - `flood_predictions`: sensor readings count.
-  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), and `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)).
+  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), and `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)).
 
 ### `GET /api/analytics/monthly`
 - **Access**: Public / Authenticated
@@ -242,3 +275,7 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 ### `GET /api/analytics/maintenance`
 - **Access**: Public / Authenticated
 - **Response** (200 OK): Maintenance analytics: distribution, average scores, drains requiring inspection/cleaning, and 24-hour trend history from the audit table. See [maintenance-prediction.md](maintenance-prediction.md).
+
+### `GET /api/analytics/vision`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Vision inspection analytics driven by the `drain_vision_inspections` audit table: total inspections, `READY` vs `INSUFFICIENT_IMAGE_QUALITY` status split, level distribution, average visual risk / possible blockage scores, drains needing manual inspection (HIGH/CRITICAL, deduplicated), and 24-hour trend history. See [vision-inspection.md](vision-inspection.md).

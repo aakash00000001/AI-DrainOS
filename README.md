@@ -82,6 +82,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **Flood Risk Intelligence & Early Warning**: An explainable, deterministic Flood Risk Score (0–100) + risk level (LOW/MODERATE/HIGH/CRITICAL) computed from water/gas/temperature plus a rising-water trend component, combined with the AI prediction and broadcast live via `floodRiskUpdate`.
 - **Predictive Flood Forecasting & 15/30/60-Minute Early Warning**: An "Explainable Baseline Forecast" that fits a time-aware water-level trend and projects each drain's future risk at 15 / 30 / 60 minutes (reusing the flood risk engine), streamed live via `forecastUpdate`, with dedicated `Flood Forecast` early-warning alerts and an honest "insufficient history" status (no fabricated confidence).
 - **Drain Maintenance & Blockage Prediction**: A third independent analytical layer that looks at long-term operational patterns (cleaning history, rising trends, gas/temperature anomalies, alert frequency) to predict whether a drain needs inspection or cleaning soon. Honest baseline — never claims physical blockage, never reports confidence. Live `maintenanceUpdate` events, `Maintenance` alert type, audit trail in `maintenance_predictions` table, and a dashboard panel.
+- **Drain Vision Inspection**: Baseline **computer-vision** drain inspection driven by OpenCV (Python AI service) with an honest local PNG fallback. Upload a drain image (JPG/JPEG/PNG/WEBP, ≤5 MB), get visual risk / possible-blockage scores, findings and a recommendation — with an `INSUFFICIENT_IMAGE_QUALITY` status when an image cannot be analyzed (never fabricates results). Results stay **separate** from the sensor maintenance engine and are stored as metadata-only rows in the `drain_vision_inspections` table. Robot dispatch is only ever a recommendation flag — `missionEngine.js` remains the authority. Live `visionInspectionUpdate` events + `Vision Inspection` alert type (+ dashboard panel + analytics section).
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -100,6 +101,9 @@ graph TD
     Forecast -->|forecastUpdate event| UI
     Server -->|Sensor + Mission + Alert History| Maintenance["Maintenance Engine<br/>(inspection/cleaning need)"]
     Maintenance -->|maintenanceUpdate event| UI
+    UI -->|POST drain image| Vision["Vision Engine<br/>(OpenCV baseline + local fallback)"]
+    Vision -->|visionInspectionUpdate event| UI
+    Vision -->|Metadata audit trail| DB
     Sim["Sensor Simulator Script"] -->|Telemetry Inserts| DB
 ```
 
@@ -112,7 +116,7 @@ Built with React 19, Vite 8, Vanilla CSS design tokens, React-Leaflet, Chart.js 
 Node.js + Express backend featuring modular routes (`auth`, `drains`, `robots`, `missions`, `sensors`, `alerts`, `predictions`, `settings`), JWT authentication middleware, role enforcement (`adminOnly`), and a 5-second event loop driving real-time simulation logic.
 
 ## 9. Python AI Service Architecture
-Flask application running on port 5001. Loads joblib-serialized ML model (`model.pkl`) to predict flood risk (`LOW`, `MEDIUM`, `HIGH`) based on water level, gas level, and temperature inputs.
+Flask application running on port 5001. Loads joblib-serialized ML model (`model.pkl`) to predict flood risk (`LOW`, `MEDIUM`, `HIGH`) based on water level, gas level, and temperature inputs. It also exposes a baseline **computer-vision** endpoint (`POST /vision/analyze`) using OpenCV (`cv2`) that decodes a drain image and returns low-level pixel features (brightness, darkness ratio, edge density, texture variance, water-like regions, dense irregular regions) — see [docs/vision-inspection.md](docs/vision-inspection.md). Dependencies are listed in `ai/requirements.txt`.
 
 ## 10. PostgreSQL Database
 Relational model database storing system accounts, session tokens, configurations, GIS drain locations, robot state, sensor telemetry, alerts, and mission logs. Detailed schema details available in [docs/database.md](docs/database.md).
@@ -160,6 +164,25 @@ trained ML model can replace it later without touching routes, UI or tests.
 📄 Full documentation (method, formula, data, alerts, events, API, ML drop-in):
 [docs/forecasting.md](docs/forecasting.md).
 
+## 15d. Drain Vision Inspection (Computer Vision)
+The vision layer (`server/services/drainVisionService.js`) accepts a single drain
+inspection image. The Python AI service decodes it with OpenCV and returns pixel
+features; when that service is unreachable an honest local PNG fallback computes the
+same feature set. One deterministic scorer turns features into **visual risk** and
+**possible blockage** scores (0–100), an inspection level
+(LOW/MODERATE/HIGH/CRITICAL), explainable findings and a recommendation. Images that
+cannot be analyzed return `INSUFFICIENT_IMAGE_QUALITY` — never a fabricated result.
+Inspections are stored as metadata-only audit rows (`drain_vision_inspections`),
+HIGH/CRITICAL results create a deduplicated, upgradable `Vision Inspection` alert
+(resolved once a later inspection is clear), results stream live via
+`visionInspectionUpdate`, and the dashboard adds a **Drain Vision Inspection** panel
+with a recent-inspections history. Vision stays **separate** from the sensor
+maintenance engine and robot dispatch remains recommendation-only
+(`missionEngine.js` is untouched).
+
+📄 Full documentation (features, scoring, honest status, API, alerts, ML replacement):
+[docs/vision-inspection.md](docs/vision-inspection.md).
+
 ## 16. Manual Mission Control
 UI interface (`pages/MissionControl.jsx`) enabling operators to manually select specific drains and dispatch available robots on demand.
 
@@ -179,11 +202,13 @@ Comprehensive list of REST endpoints documented in [docs/api.md](docs/api.md).
 
 ## 21. Database Tables
 Database tables (`users`, `refresh_tokens`, `settings`, `drains`, `robots`, `sensors`,
-`sensor_readings`, `alerts`, `missions`, `charging_stations`, `reports`) documented in
+`sensor_readings`, `alerts`, `missions`, `charging_stations`, `reports`,
+`maintenance_predictions`, `drain_vision_inspections`) documented in
 [docs/database.md](docs/database.md). `sensor_readings` is the minimal flood-risk
 history table (see [docs/flood-risk.md](docs/flood-risk.md)); an idempotent migration
 (`database/migrations/002_sensor_readings.sql`) is applied automatically to existing
-databases by `scripts/dbInit.js` without destroying data.
+databases by `scripts/dbInit.js` without destroying data. The vision metadata audit
+table is added the same way via `database/migrations/004_drain_vision_inspections.sql`.
 
 ## 22. Important Socket.IO Events
 - `drainCleaned`: Fired when a robot reaches target drain and completes cleaning.
@@ -195,6 +220,8 @@ databases by `scripts/dbInit.js` without destroying data.
 - `forecastUpdate`: Emitted when a drain's worst predicted (60-min) forecast level changes (or its score moves ≥ 2 points) with the 15/30/60-minute horizon projections and trend information.
 - `maintenanceUpdate`: Emitted when a drain's maintenance level changes (or its maintenance score moves ≥ 3 points) with maintenance/blockage scores, level, inspection priority, recommendation, and explainable reasons.
 - `Maintenance` alert type: created when a drain's maintenance level is HIGH (Medium severity) or CRITICAL (Critical severity), deduplicated per drain, resolved when level drops below HIGH.
+- `visionInspectionUpdate`: Emitted after a drain vision inspection completes (status READY or INSUFFICIENT_IMAGE_QUALITY) with visual-risk / possible-blockage scores, level, findings, recommendation, robot-inspection flag and image dimensions.
+- `Vision Inspection` alert type: created when a vision inspection level is HIGH (Medium severity) or CRITICAL (Critical severity), deduplicated per drain, upgrade-only, resolved when a later inspection is LOW/MODERATE.
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -253,8 +280,12 @@ npm run dev
 ## 29. How to Start Python AI Service
 ```bash
 cd ai
+python -m venv venv            # first time only
+venv\Scripts\pip install -r requirements.txt   # first time only (adds OpenCV)
 python app.py
 ```
+Serves `POST /predict` (flood risk ML) and `POST /vision/analyze`
+(OpenCV baseline drain-image analysis) on port 5001.
 
 ## 30. How to Start Sensor Simulator
 ```bash
@@ -287,22 +318,27 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **122 tests** covering auth, RBAC, drains, robots, missions,
+The suite currently includes **170 tests** covering auth, RBAC, drains, robots, missions,
 alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
 database mapping, AI prediction, socket emission, alert escalation, and broker-failure
 resilience), the flood risk engine (normalization, trend, classification, historical
 readings, MQTT → risk integration, `floodRiskUpdate` dedupe, alert dedup/recovery, AI
-fallback, and the risk REST endpoints) and the predictive flood forecast engine
+fallback, and the risk REST endpoints), the predictive flood forecast engine
 (time-series cleaning, trend fit, direction labels, projections, honest status handling,
 determinism, no-fabricated-confidence contract, `Flood Forecast` alerts,
-`forecastUpdate` dedupe/emission, and the forecast REST/analytics endpoints).
+`forecastUpdate` dedupe/emission, and the forecast REST/analytics endpoints), the
+maintenance engine, and the drain vision inspection pipeline (image-type detection,
+PNG decoder, feature extraction, scoring thresholds, honest-status contract, upload
+validation, persistence, history, `Vision Inspection` alert lifecycle, and the vision
+REST/analytics endpoints).
 
 ## 32. Project Folder Structure
 ```
 AI-DrainOS/
-├── ai/                      # Python Flask AI prediction service
+├── ai/                      # Python Flask AI prediction + vision service
 │   ├── app.py
 │   ├── model.pkl
+│   ├── requirements.txt
 │   └── train_model.py
 ├── client/                  # React Vite Frontend Application
 │   ├── src/
@@ -324,6 +360,8 @@ AI-DrainOS/
 │   ├── schema.sql
 │   ├── seed.sql
 │   └── migrations/002_sensor_readings.sql
+│   └── migrations/003_maintenance_predictions.sql
+│   └── migrations/004_drain_vision_inspections.sql
 ├── docs/                    # Architectural & API Documentation
 │   ├── architecture.md
 │   ├── api.md
@@ -331,7 +369,8 @@ AI-DrainOS/
 │   ├── workflow.md
 │   ├── mqtt.md
 │   ├── flood-risk.md
-│   └── forecasting.md
+│   ├── forecasting.md
+│   └── vision-inspection.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example
