@@ -36,6 +36,7 @@ ChartJS.register(
 function AnalyticsReport() {
 
   const [analytics, setAnalytics] = useState(null);
+  const [error, setError] = useState(false);
 
   const loadAnalytics = async () => {
 
@@ -46,12 +47,14 @@ function AnalyticsReport() {
       );
 
       setAnalytics(response.data);
+      setError(false);
 
     }
 
     catch(err){
 
       console.log(err);
+      setError(true);
 
     }
 
@@ -73,7 +76,7 @@ function AnalyticsReport() {
 
       <div className="analytics-card">
 
-        Loading Analytics...
+        {error ? "Analytics unavailable - check that the backend is running." : "Loading Analytics..."}
 
       </div>
 

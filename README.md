@@ -156,7 +156,7 @@ Database tables (`users`, `refresh_tokens`, `settings`, `drains`, `robots`, `sen
 - `JWT_SECRET` (default: supersecretkey)
 - `AI_SERVICE_URL` (default: http://127.0.0.1:5001)
 - `OPENWEATHER_API_KEY` (optional key for live weather data in `WeatherMonitor` / `WeatherForm`)
-- `FRONTEND_URL` (default: http://localhost:5173, used in Socket.IO CORS)
+- `FRONTEND_URL` (default: http://localhost:5173, used in Socket.IO CORS and the backend REST CORS allow-list; supports comma-separated origins when set)
 - `VITE_API_URL` (default: http://localhost:5000/api)
 - `VITE_SOCKET_URL` (default: http://localhost:5000)
 

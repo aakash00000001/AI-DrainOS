@@ -28,7 +28,7 @@ services:
     ports:
       - "5001:5001"
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:5001/predict\")' || exit 0"]
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(3); s.connect(('127.0.0.1', 5001))"]
       interval: 10s
       timeout: 5s
       retries: 3

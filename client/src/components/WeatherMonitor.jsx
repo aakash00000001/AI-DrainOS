@@ -5,6 +5,7 @@ import { API_URL } from "../services/api";
 function WeatherMonitor() {
 
   const [weather, setWeather] = useState(null);
+  const [error, setError] = useState(null);
 
   const loadWeather = () => {
 
@@ -13,11 +14,13 @@ function WeatherMonitor() {
       .then((response) => {
 
         setWeather(response.data);
+        setError(null);
 
       })
       .catch((error) => {
 
         console.log(error);
+        setError("Weather unavailable - add OPENWEATHER_API_KEY to server/.env");
 
       });
 
@@ -32,6 +35,22 @@ function WeatherMonitor() {
     return () => clearInterval(interval);
 
   }, []);
+
+  if (error) {
+
+    return (
+
+      <div className="weather-box">
+
+        <h2>🌦 Live Weather</h2>
+
+        <p style={{ color: "#b91c1c" }}>{error}</p>
+
+      </div>
+
+    );
+
+  }
 
   if (!weather) {
 

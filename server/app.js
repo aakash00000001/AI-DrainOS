@@ -5,7 +5,13 @@ require("dotenv").config();
 
 const app = express();
 
-app.use(cors());
+// CORS: restrict to FRONTEND_URL when configured, otherwise allow all (dev)
+const frontendOrigins = (process.env.FRONTEND_URL || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors(frontendOrigins.length > 0 ? { origin: frontendOrigins } : {}));
 app.use(express.json());
 
 // --------------------------------------------------

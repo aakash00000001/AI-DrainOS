@@ -39,6 +39,14 @@ function SensorMonitor() {
 
       <h2>📡 Live Sensor Monitor</h2>
 
+      {sensors.length === 0 && (
+
+        <div className="empty-state">
+          No sensor data yet - run the sensor simulator: npm run simulate
+        </div>
+
+      )}
+
       {
 
         sensors.map((sensor) => (
