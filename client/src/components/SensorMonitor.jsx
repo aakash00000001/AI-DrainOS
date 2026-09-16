@@ -49,9 +49,28 @@ function SensorMonitor() {
 
     };
 
-    socket.on("sensorUpdate", onSensorUpdate);
+    const onMaintenanceUpdate = (data) => {
+      setLive((prev) => ({
+        ...prev,
+        [data.sensorId]: {
+          ...prev[data.sensorId],
+          maintenanceScore: data.maintenanceScore,
+          maintenanceLevel: data.maintenanceLevel,
+          blockageRiskScore: data.blockageRiskScore,
+          blockageRiskLevel: data.blockageRiskLevel,
+          maintenanceRecommendation: data.maintenanceRecommendation,
+          maintenanceReceivedAt: new Date()
+        }
+      }));
+    };
 
-    return () => socket.off("sensorUpdate", onSensorUpdate);
+    socket.on("sensorUpdate", onSensorUpdate);
+    socket.on("maintenanceUpdate", onMaintenanceUpdate);
+
+    return () => {
+      socket.off("sensorUpdate", onSensorUpdate);
+      socket.off("maintenanceUpdate", onMaintenanceUpdate);
+    };
 
   }, []);
 
@@ -168,6 +187,31 @@ function SensorMonitor() {
                         .replace(/_/g, " ")}`
                     : ""}
                 </strong>
+              </p>
+            )}
+
+            {liveUpdate?.maintenanceLevel && (
+              <p>
+                🛠️ Maintenance :
+                <strong
+                  style={{
+                    color: {
+                      LOW: "#16a34a",
+                      MODERATE: "#d97706",
+                      HIGH: "#ea580c",
+                      CRITICAL: "#dc2626"
+                    }[liveUpdate.maintenanceLevel] || "#0f172a"
+                  }}
+                >
+                  {" "}{liveUpdate.maintenanceScore}/100 ({liveUpdate.maintenanceLevel})
+                </strong>
+              </p>
+            )}
+
+            {liveUpdate?.maintenanceRecommendation && (
+              <p>
+                💡 Action:
+                <strong> {liveUpdate.maintenanceRecommendation}</strong>
               </p>
             )}
 

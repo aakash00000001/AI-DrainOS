@@ -4,6 +4,7 @@ const pool = require("../config/db");
 
 const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
+const maintenanceService = require("../services/maintenancePredictionService");
 const mqttService = require("../services/mqttService");
 
 router.get("/", async (req, res) => {
@@ -140,6 +141,41 @@ router.get("/forecast", async (req, res) => {
         distribution: summary.distribution
       },
       topForecast
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/dashboard/maintenance - Maintenance overview summary
+// for the dashboard maintenance panel: drains requiring
+// inspection/cleaning, plus the highest maintenance-priority
+// drain with its explainable breakdown. Additive - existing
+// risk/forecast responses are untouched.
+// --------------------------------------------------
+
+router.get("/maintenance", async (req, res) => {
+  try {
+    const summary = await maintenanceService.getMaintenanceSummary({
+      force: req.query.refresh === "true"
+    });
+
+    res.json({
+      summary: {
+        totalDrains: summary.totalDrains,
+        averageMaintenanceScore: summary.averageMaintenanceScore,
+        averageBlockageRisk: summary.averageBlockageRisk,
+        counts: summary.counts,
+        distribution: summary.distribution,
+        drainsRequiringInspection: summary.drainsRequiringInspection,
+        drainsRequiringCleaning: summary.drainsRequiringCleaning,
+        highestMaintenanceScore: summary.highestMaintenanceScore,
+        highestBlockageRisk: summary.highestBlockageRisk,
+        topMaintenance: summary.topMaintenance
+      },
+      drains: summary.drains
     });
   } catch (err) {
     console.error(err);

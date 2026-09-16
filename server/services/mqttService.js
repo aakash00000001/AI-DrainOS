@@ -23,6 +23,7 @@ const pool = require("../config/db");
 
 const floodRisk = require("./floodRiskService");
 const floodForecast = require("./floodForecastService");
+const maintenanceService = require("./maintenancePredictionService");
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
@@ -45,6 +46,13 @@ const floodRiskState = new Map();
 
 // Per-drain flood forecast emission state (dedupe for forecastUpdate)
 const forecastState = new Map();
+
+// Per-drain maintenance - last emission state (dedupe for
+// maintenanceUpdate) and recompute throttle (sub-30s messages for
+// the same drain reuse the last computation).
+const maintenanceState = new Map();
+const mqttMaintenanceThrottle = new Map();
+const MAINTENANCE_RECOMPUTE_INTERVAL_MS = 30000;
 
 let aiUnreachableLoggedAt = null;
 
@@ -291,6 +299,40 @@ function shouldEmitForecast(drainId, score, level) {
   }
 
   return false;
+}
+
+// --------------------------------------------------
+// Maintenance update dedupe - emit a maintenanceUpdate event only
+// when the maintenance level changed or the maintenance score
+// moved by at least 3 points, so the browser is not flooded by
+// every packet.
+// --------------------------------------------------
+
+function shouldEmitMaintenance(drainId, maintenanceScore, level, blockageScore) {
+  const prev = maintenanceState.get(drainId);
+
+  const levelChanged = !prev || prev.level !== level;
+  const scoreChanged =
+    !prev || Math.abs(prev.maintenanceScore - maintenanceScore) >= 3;
+
+  if (levelChanged || scoreChanged) {
+    maintenanceState.set(drainId, { maintenanceScore, level, blockageScore });
+    return true;
+  }
+
+  return false;
+}
+
+// --------------------------------------------------
+// Reset maintenance in-memory runtime (throttle + dedupe state)
+// and the maintenance service caches. Used by tests and on
+// demand so a fresh prediction is always computed next.
+// --------------------------------------------------
+
+function resetMaintenanceEmitter() {
+  maintenanceState.clear();
+  mqttMaintenanceThrottle.clear();
+  maintenanceService.resetMaintenanceRuntime();
 }
 
 // --------------------------------------------------
@@ -642,6 +684,82 @@ async function handleMessage(topic, rawPayload, context = {}) {
     }
 
     // --------------------------------------------------
+    // 7c. Maintenance & blockage prediction (potential
+    // obstruction pattern) + maintenance alert workflow + live
+    // update. Best-effort and throttled per drain so this extra
+    // layer never blocks or floods the existing sensor pipeline.
+    // --------------------------------------------------
+
+    let maintenance = null;
+
+    try {
+      const throttle = mqttMaintenanceThrottle.get(drainId);
+
+      if (
+        !throttle ||
+        Date.now() - throttle.lastComputedAt >=
+          MAINTENANCE_RECOMPUTE_INTERVAL_MS
+      ) {
+        maintenance = await maintenanceService.getDrainMaintenance(drainId);
+
+        mqttMaintenanceThrottle.set(drainId, { lastComputedAt: Date.now() });
+
+        if (maintenance && maintenance.status === "READY") {
+          // Maintenance-level early warning alert (HIGH -> Medium,
+          // CRITICAL -> Critical, upgraded in place when needed).
+          if (
+            maintenance.maintenanceLevel === "CRITICAL" ||
+            maintenance.maintenanceLevel === "HIGH"
+          ) {
+            const severity =
+              maintenance.maintenanceLevel === "CRITICAL"
+                ? "Critical"
+                : "Medium";
+
+            await maintenanceService.ensureMaintenanceAlert({
+              drainId,
+              location: drain.location,
+              severity,
+              message: `Maintenance ${maintenance.maintenanceLevel} (maintenance score ${maintenance.maintenanceScore}/100, blockage risk ${maintenance.blockageRiskScore}/100) at ${drain.location}`
+            });
+          } else {
+            // Prediction dropped below HIGH -> resolve maintenance alerts
+            await maintenanceService.resolveMaintenanceAlerts(drainId);
+          }
+
+          // Emit maintenanceUpdate only when something meaningful changed
+          if (
+            shouldEmitMaintenance(
+              drainId,
+              maintenance.maintenanceScore,
+              maintenance.maintenanceLevel,
+              maintenance.blockageRiskScore
+            )
+          ) {
+            io.emit("maintenanceUpdate", {
+              drainId: Number(drainId),
+              sensorId: Number(maintenance.sensorId),
+              maintenanceScore: maintenance.maintenanceScore,
+              maintenanceLevel: maintenance.maintenanceLevel,
+              blockageRiskScore: maintenance.blockageRiskScore,
+              blockageRiskLevel: maintenance.blockageRiskLevel,
+              inspectionPriority: maintenance.inspectionPriority,
+              maintenanceRecommendation: maintenance.maintenanceRecommendation,
+              reasons: maintenance.reasons,
+              unavailableSignals: maintenance.unavailableSignals,
+              timestamp: reading.timestamp || new Date().toISOString()
+            });
+          }
+        }
+      }
+    } catch (maintenanceErr) {
+      // A maintenance engine problem must never break the existing
+      // MQTT -> sensor -> AI -> alert pipeline.
+      console.log("⚠️ Maintenance prediction skipped:", maintenanceErr.message);
+      maintenance = null;
+    }
+
+    // --------------------------------------------------
     // 8. Emit live update
     // --------------------------------------------------
 
@@ -667,6 +785,26 @@ async function handleMessage(topic, rawPayload, context = {}) {
       forecastTrendDirection:
         forecast && forecast.status === "ready"
           ? forecast.trendDirection
+          : null,
+      maintenanceScore:
+        maintenance && maintenance.status === "READY"
+          ? maintenance.maintenanceScore
+          : null,
+      maintenanceLevel:
+        maintenance && maintenance.status === "READY"
+          ? maintenance.maintenanceLevel
+          : null,
+      blockageRiskScore:
+        maintenance && maintenance.status === "READY"
+          ? maintenance.blockageRiskScore
+          : null,
+      blockageRiskLevel:
+        maintenance && maintenance.status === "READY"
+          ? maintenance.blockageRiskLevel
+          : null,
+      maintenanceRecommendation:
+        maintenance && maintenance.status === "READY"
+          ? maintenance.maintenanceRecommendation
           : null,
       timestamp: reading.timestamp || new Date().toISOString()
     };
@@ -786,5 +924,9 @@ module.exports = {
   buildTopic,
   fallbackPrediction,
   defaultPredict,
-  getPrediction
+  getPrediction,
+  shouldEmitFloodRisk,
+  shouldEmitForecast,
+  shouldEmitMaintenance,
+  resetMaintenanceEmitter
 };

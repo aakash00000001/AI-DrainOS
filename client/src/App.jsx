@@ -11,6 +11,7 @@ import DashboardLayout from "./components/layout/DashboardLayout";
 import DashboardCards from "./components/DashboardCards";
 import FloodRiskPanel from "./components/FloodRiskPanel";
 import ForecastPanel from "./components/ForecastPanel";
+import MaintenancePanel from "./components/MaintenancePanel";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -214,6 +215,8 @@ function App() {
           <FloodRiskPanel />
 
           <ForecastPanel />
+
+          <MaintenancePanel />
 
           <div className="sections">
 

@@ -145,6 +145,24 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
   }
   ```
 
+### `GET /api/predictions/risk/:drainId`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Explainable flood risk score, risk level, trend, and weighted breakdown for a single drain. See [flood-risk.md](flood-risk.md).
+- **Response** (404): `{ "error": "Drain not found" }`
+- **Response** (400): `{ "error": "Invalid drain id" }`
+
+### `GET /api/predictions/forecast/:drainId`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): 15/30/60-minute flood forecast with worst-horizon prediction, trend direction, and per-horizon risk levels. See [forecasting.md](forecasting.md).
+- **Response** (404): `{ "error": "Drain not found" }`
+- **Response** (400): `{ "error": "Invalid drain id" }`
+
+### `GET /api/predictions/maintenance/:drainId`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Maintenance and blockage prediction — whether a drain needs inspection or cleaning. Includes `maintenanceScore`, `maintenanceLevel`, `blockageRiskScore`, `blockageRiskLevel`, `inspectionPriority`, `maintenanceRecommendation`, `reasons` (array of explainable strings), and `unavailableSignals`. Returns `status: "INSUFFICIENT_DATA"` when not enough sensor history. See [maintenance-prediction.md](maintenance-prediction.md).
+- **Response** (404): `{ "error": "Drain not found" }`
+- **Response** (400): `{ "error": "Invalid drain id" }`
+
 ---
 
 ## Alerts, Settings & Dashboard
@@ -168,6 +186,18 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 - **Access**: Public / Authenticated
 - **Response** (200 OK): `{ "totalDrains": 7, "activeRobots": 1, "criticalAlerts": 2 }`
 
+### `GET /api/dashboard/risk`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Flood risk summary + top-risk drain with full breakdown. See [flood-risk.md](flood-risk.md).
+
+### `GET /api/dashboard/forecast`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Forecast summary + top predicted-risk drain with 15/30/60-minute horizons. See [forecasting.md](forecasting.md).
+
+### `GET /api/dashboard/maintenance`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Maintenance summary + highest-maintenance-priority drain with recommendation, blockage risk, and drain overview list. See [maintenance-prediction.md](maintenance-prediction.md).
+
 ---
 
 ## Analytics API (`/api/analytics`)
@@ -190,7 +220,7 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
   - `total_cleanings` / `robot_operations` / `total_missions`: mission records.
   - `blockages_detected`: open Critical alerts.
   - `flood_predictions`: sensor readings count.
-  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)) and `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)).
+  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), and `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)).
 
 ### `GET /api/analytics/monthly`
 - **Access**: Public / Authenticated
@@ -200,3 +230,15 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
     { "month": "Sep", "avg_water": 54.3, "max_water": 95, "avg_gas": 38.2, "readings": 7 }
   ]
   ```
+
+### `GET /api/analytics/risk`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Aggregate flood risk summary. See [flood-risk.md](flood-risk.md).
+
+### `GET /api/analytics/forecast`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Aggregate forecast summary. See [forecasting.md](forecasting.md).
+
+### `GET /api/analytics/maintenance`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Maintenance analytics: distribution, average scores, drains requiring inspection/cleaning, and 24-hour trend history from the audit table. See [maintenance-prediction.md](maintenance-prediction.md).

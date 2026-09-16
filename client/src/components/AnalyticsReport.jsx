@@ -285,6 +285,54 @@ function AnalyticsReport() {
   </>
 )}
 
+{analytics.maintenance_average_score !== undefined && (
+  <>
+    <h3>🛠️ Maintenance Prediction Summary</h3>
+
+    <div className="analytics-grid">
+
+      <div className="analytics-item">
+        <FaChartLine className="analytics-icon"/>
+        <h3>{analytics.maintenance_average_score}</h3>
+        <p>Avg Maintenance Score</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.maintenance_average_blockage_risk}</h3>
+        <p>Avg Blockage Risk</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.maintenance_low}</h3>
+        <p>Maintenance LOW</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.maintenance_moderate}</h3>
+        <p>Maintenance MODERATE</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.maintenance_high}</h3>
+        <p>Maintenance HIGH</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.maintenance_critical}</h3>
+        <p>Maintenance CRITICAL</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{analytics.maintenance_drains_inspection}</h3>
+        <p>Need Inspection</p>
+      </div>
+
+    </div>
+
+    <br/>
+  </>
+)}
+
 <br/>
 
 <h3>📊 System Analytics</h3>

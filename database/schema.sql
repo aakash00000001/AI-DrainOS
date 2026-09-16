@@ -4,6 +4,7 @@
 -- ============================================================
 
 DROP TABLE IF EXISTS sensor_readings CASCADE;
+DROP TABLE IF EXISTS maintenance_predictions CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS settings CASCADE;
 DROP TABLE IF EXISTS reports CASCADE;
@@ -120,6 +121,31 @@ CREATE TABLE sensor_readings (
 CREATE INDEX idx_sensor_readings_sensor_id ON sensor_readings(sensor_id);
 CREATE INDEX idx_sensor_readings_drain_id ON sensor_readings(drain_id);
 CREATE INDEX idx_sensor_readings_recorded_at ON sensor_readings(recorded_at);
+
+-- ============================================================
+-- MAINTENANCE PREDICTIONS (maintenance / blockage prediction)
+--
+-- Audit trail of the explainable maintenance prediction engine.
+-- Each engine run persists one row per drain so analytics can
+-- report recent maintenance trends. This is NOT a duplicate of
+-- raw sensor data - it stores the derived maintenance/blockage
+-- prediction scores only.
+-- ============================================================
+
+CREATE TABLE maintenance_predictions (
+  id SERIAL PRIMARY KEY,
+  drain_id INTEGER NOT NULL REFERENCES drains(id) ON DELETE CASCADE,
+  maintenance_score INTEGER DEFAULT 0,
+  maintenance_level VARCHAR(20) DEFAULT 'LOW',
+  blockage_risk_score INTEGER DEFAULT 0,
+  inspection_priority VARCHAR(20) DEFAULT 'LOW',
+  recommendation TEXT,
+  reasons JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_maintenance_predictions_drain_id ON maintenance_predictions(drain_id);
+CREATE INDEX idx_maintenance_predictions_created_at ON maintenance_predictions(created_at);
 
 -- ============================================================
 -- ALERTS

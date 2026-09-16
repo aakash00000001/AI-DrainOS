@@ -4,6 +4,7 @@ const pool = require("../config/db");
 
 const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
+const maintenanceService = require("../services/maintenancePredictionService");
 
 router.get("/", async (req, res) => {
 
@@ -47,6 +48,7 @@ router.get("/", async (req, res) => {
 
     const riskSummary = await floodRisk.getRiskSummary();
     const forecastSummary = await floodForecast.getForecastSummary({ force: true });
+    const maintenanceSummary = await maintenanceService.getMaintenanceSummary();
 
     res.json({
       total_cleanings: Number(totalCleanings.rows[0].count),
@@ -69,7 +71,16 @@ router.get("/", async (req, res) => {
       forecast_high: forecastSummary.counts.high,
       forecast_critical: forecastSummary.counts.critical,
       forecast_distribution: forecastSummary.distribution,
-      forecast_ready: forecastSummary.totalDrains
+      forecast_ready: forecastSummary.totalDrains,
+      maintenance_average_score: maintenanceSummary.averageMaintenanceScore,
+      maintenance_average_blockage_risk: maintenanceSummary.averageBlockageRisk,
+      maintenance_low: maintenanceSummary.counts.low,
+      maintenance_moderate: maintenanceSummary.counts.moderate,
+      maintenance_high: maintenanceSummary.counts.high,
+      maintenance_critical: maintenanceSummary.counts.critical,
+      maintenance_distribution: maintenanceSummary.distribution,
+      maintenance_ready_drains: maintenanceSummary.totalDrains,
+      maintenance_drains_inspection: maintenanceSummary.drainsRequiringInspection.length
     });
 
   }
@@ -138,6 +149,16 @@ router.get("/forecast", async (req, res) => {
     const force = req.query.refresh === "true";
     const summary = await floodForecast.getForecastSummary({ force });
     res.json(summary);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+router.get("/maintenance", async (req, res) => {
+  try {
+    const data = await maintenanceService.getMaintenanceAnalytics();
+    res.json(data);
   } catch (err) {
     console.log(err);
     res.status(500).json({ error: "Analytics Error" });

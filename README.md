@@ -81,6 +81,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **MQTT IoT Sensor Integration**: Consumes live readings from MQTT-capable IoT drain sensors (or the bundled `simulate:mqtt` simulator), validates them, persists to PostgreSQL, runs AI prediction, and streams live `sensorUpdate` events.
 - **Flood Risk Intelligence & Early Warning**: An explainable, deterministic Flood Risk Score (0–100) + risk level (LOW/MODERATE/HIGH/CRITICAL) computed from water/gas/temperature plus a rising-water trend component, combined with the AI prediction and broadcast live via `floodRiskUpdate`.
 - **Predictive Flood Forecasting & 15/30/60-Minute Early Warning**: An "Explainable Baseline Forecast" that fits a time-aware water-level trend and projects each drain's future risk at 15 / 30 / 60 minutes (reusing the flood risk engine), streamed live via `forecastUpdate`, with dedicated `Flood Forecast` early-warning alerts and an honest "insufficient history" status (no fabricated confidence).
+- **Drain Maintenance & Blockage Prediction**: A third independent analytical layer that looks at long-term operational patterns (cleaning history, rising trends, gas/temperature anomalies, alert frequency) to predict whether a drain needs inspection or cleaning soon. Honest baseline — never claims physical blockage, never reports confidence. Live `maintenanceUpdate` events, `Maintenance` alert type, audit trail in `maintenance_predictions` table, and a dashboard panel.
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -93,10 +94,12 @@ graph TD
     Server <-->|HTTP POST /predict| AI["Python AI Service"]
     IoT["IoT Sensors / MQTT Simulator"] -->|MQTT ai-drainos/drains/+/sensors/+| Broker["MQTT Broker"]
     Broker -->|Subscribed Readings| Server
-    Server -->|Sensor Readings + History| Risk["Flood Risk Engine<br/>(risk score 0-100 + level)"]
+    Server -->|Sensor Readings + History| Risk["Flood Risk Engine<br/>(current risk score 0-100 + level)"]
     Risk -->|floodRiskUpdate event| UI
     Risk -->|Predicted Water + History| Forecast["Forecast Engine<br/>(15/30/60 min projections)"]
     Forecast -->|forecastUpdate event| UI
+    Server -->|Sensor + Mission + Alert History| Maintenance["Maintenance Engine<br/>(inspection/cleaning need)"]
+    Maintenance -->|maintenanceUpdate event| UI
     Sim["Sensor Simulator Script"] -->|Telemetry Inserts| DB
 ```
 
@@ -187,9 +190,11 @@ databases by `scripts/dbInit.js` without destroying data.
 - `criticalAlert`: Fired when a **new** Critical alert is created.
 - `batteryLow`: Fired when a robot battery drops <= 20% and is routed to a charging station.
 - `dashboardUpdate`: Emitted every 5s with latest system stat counters.
-- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, plus additive flood risk score/level/trend and 60-min forecast score/level/trend).
+- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, plus additive flood risk score/level/trend, 60-min forecast score/level/trend, and maintenance score/level/blockage-risk/recommendation).
 - `floodRiskUpdate`: Emitted when a drain's Flood Risk level changes (or its score moves ≥ 2 points) with the explainable risk breakdown + AI prediction.
 - `forecastUpdate`: Emitted when a drain's worst predicted (60-min) forecast level changes (or its score moves ≥ 2 points) with the 15/30/60-minute horizon projections and trend information.
+- `maintenanceUpdate`: Emitted when a drain's maintenance level changes (or its maintenance score moves ≥ 3 points) with maintenance/blockage scores, level, inspection priority, recommendation, and explainable reasons.
+- `Maintenance` alert type: created when a drain's maintenance level is HIGH (Medium severity) or CRITICAL (Critical severity), deduplicated per drain, resolved when level drops below HIGH.
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)

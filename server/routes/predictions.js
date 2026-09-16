@@ -5,6 +5,7 @@ const pool = require("../config/db");
 
 const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
+const maintenanceService = require("../services/maintenancePredictionService");
 const mqttService = require("../services/mqttService");
 
 const AI_SERVICE_URL =
@@ -220,6 +221,39 @@ router.get("/forecast/:drainId", async (req, res) => {
     console.log(err.message);
 
     res.status(500).json({ error: "Flood forecast calculation failed" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/predictions/maintenance/:drainId
+// --------------------------------------------------
+// Maintenance & blockage prediction for a single drain: does the
+// drain show signs inspection, cleaning or maintenance may soon
+// be required? Uses the same public model as GET /api/predictions
+// (no auth). Returns an honest INSUFFICIENT_DATA status when not
+// enough history exists - no fabricated score or confidence.
+// --------------------------------------------------
+
+router.get("/maintenance/:drainId", async (req, res) => {
+  try {
+    const drainId = Number(req.params.drainId);
+
+    if (!Number.isInteger(drainId) || drainId <= 0) {
+      return res.status(400).json({ error: "Invalid drain id" });
+    }
+
+    const prediction = await maintenanceService.getDrainMaintenance(drainId);
+
+    if (!prediction) {
+      return res.status(404).json({ error: "Drain not found" });
+    }
+
+    res.json(prediction);
+  } catch (err) {
+    console.log("========== MAINTENANCE PREDICTION API ERROR ==========");
+    console.log(err.message);
+
+    res.status(500).json({ error: "Maintenance prediction failed" });
   }
 });
 
