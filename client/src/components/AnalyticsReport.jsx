@@ -1,0 +1,251 @@
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { API_URL } from "../services/api";
+
+import {
+  FaWater,
+  FaRobot,
+  FaExclamationTriangle,
+  FaChartLine
+} from "react-icons/fa";
+
+import {
+  Bar,
+  Doughnut
+} from "react-chartjs-2";
+
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Tooltip,
+  Legend
+} from "chart.js";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Tooltip,
+  Legend
+);
+
+function AnalyticsReport() {
+
+  const [analytics, setAnalytics] = useState(null);
+
+  const loadAnalytics = async () => {
+
+    try {
+
+      const response = await axios.get(
+        `${API_URL}/analytics`
+      );
+
+      setAnalytics(response.data);
+
+    }
+
+    catch(err){
+
+      console.log(err);
+
+    }
+
+  };
+
+  useEffect(() => {
+
+    loadAnalytics();
+
+    const interval = setInterval(loadAnalytics,5000);
+
+    return ()=>clearInterval(interval);
+
+  },[]);
+
+  if(!analytics){
+
+    return(
+
+      <div className="analytics-card">
+
+        Loading Analytics...
+
+      </div>
+
+    );
+
+  }
+
+  const barData={
+
+    labels:[
+      "Cleanings",
+      "Blockages",
+      "Robots",
+      "Predictions"
+    ],
+
+    datasets:[
+
+      {
+
+        label:"AI DrainOS",
+
+        data:[
+
+          analytics.total_cleanings,
+
+          analytics.blockages_detected,
+
+          analytics.robot_operations,
+
+          analytics.flood_predictions
+
+        ]
+
+      }
+
+    ]
+
+  };
+
+  const doughnutData={
+
+    labels:[
+
+      "Robot Operations",
+
+      "Critical Alerts",
+
+      "Flood Predictions"
+
+    ],
+
+    datasets:[
+
+      {
+
+        data:[
+
+          analytics.robot_operations,
+
+          analytics.blockages_detected,
+
+          analytics.flood_predictions
+
+        ]
+
+      }
+
+    ]
+
+  };
+
+  return(
+
+<div className="analytics-card">
+
+<div className="card-header">
+
+<h2>
+
+<FaChartLine/>
+
+{" "}AI Analytics Dashboard
+
+</h2>
+
+</div>
+
+<div className="analytics-grid">
+
+<div className="analytics-item">
+
+<FaWater className="analytics-icon"/>
+
+<h3>{analytics.total_cleanings}</h3>
+
+<p>Total Cleanings</p>
+
+</div>
+
+<div className="analytics-item">
+
+<FaExclamationTriangle className="analytics-icon"/>
+
+<h3>{analytics.blockages_detected}</h3>
+
+<p>Critical Alerts</p>
+
+</div>
+
+<div className="analytics-item">
+
+<FaRobot className="analytics-icon"/>
+
+<h3>{analytics.robot_operations}</h3>
+
+<p>Robot Operations</p>
+
+</div>
+
+<div className="analytics-item">
+
+<FaChartLine className="analytics-icon"/>
+
+<h3>{analytics.flood_predictions}</h3>
+
+<p>Predictions</p>
+
+</div>
+
+</div>
+
+<br/>
+
+<h3>📊 System Analytics</h3>
+
+<Bar data={barData}/>
+
+<br/>
+
+<h3>🥧 System Distribution</h3>
+
+<Doughnut data={doughnutData}/>
+
+<br/>
+
+<div className="analytics-summary">
+
+<h3>AI Summary</h3>
+
+<p>
+
+The AI continuously monitors sensors,
+
+weather,
+
+robots,
+
+and alerts
+
+to detect possible flood risks
+
+in real time.
+
+</p>
+
+</div>
+
+</div>
+
+  );
+
+}
+
+export default AnalyticsReport;

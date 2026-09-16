@@ -1,0 +1,32 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "AI-DrainOS Backend",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "db:setup": "node scripts/dbSetup.js",
+    "db:setup:fresh": "node scripts/dbSetup.js --fresh",
+    "simulate": "node scripts/simulateSensors.js",
+    "simulate:once": "node scripts/simulateSensors.js --once",
+    "test": "node --test --test-concurrency=1 \"tests/*.test.js\"",
+    "test:watch": "node --test --watch --test-concurrency=1 \"tests/*.test.js\""
+  },
+  "dependencies": {
+    "axios": "^1.19.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-validator": "^7.3.2",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.22.0",
+    "react-leaflet-drift-marker": "^4.0.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "supertest": "^7.1.4"
+  }
+}
