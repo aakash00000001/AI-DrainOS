@@ -2,6 +2,15 @@
 
 Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 
+> **Digital Twin (read-only consumer).** The interactive 3D Digital Twin
+> (page + dashboard preview) adds **no new endpoints**. It consumes the
+> existing GET routes listed below: `/api/drains`, `/api/sensors`,
+> `/api/robots`, `/api/charging-stations`, `/api/dashboard/robot-routes`,
+> `/api/dashboard/decisions`, and the per-drain prediction detail routes
+> (`/api/predictions/risk|forecast|maintenance|decision|vision/:drainId`).
+> See [digital-twin.md](digital-twin.md) for the aggregation model and the
+> visualization-coordinate caveat.
+
 ---
 
 ## Authentication & User Management (`/api/auth`)
@@ -188,6 +197,43 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 - **Response** (400): `{ "error": "No image file provided" }` | `"Invalid image type"` | `"Image is empty"` | `"Image exceeds the 5MB size limit"` | `"Invalid drain id"` | `"Drain not found"`.
 - See [vision-inspection.md](vision-inspection.md).
 
+### `GET /api/predictions/decision/:drainId`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): AI Drain Decision & Priority Engine output for a single drain — a bounded 0–100 attention-priority score (`priorityScore`), `priorityLevel`, `recommendedAction`, human-readable `reasons`, weighted `contributingFactors`, additive `modifiers` (trend + open alerts), `robotRecommendation` (nearest / already-assigned / battery-too-low / none), `dataAvailability`, and honest `status` (`"READY"` or `"INSUFFICIENT_DATA"` with a null score). See [decision-engine.md](decision-engine.md).
+- **Response** (404): `{ "error": "Drain not found" }`
+- **Response** (400): `{ "error": "Invalid drain id" }`
+
+### `GET /api/predictions/robot-route/:drainId`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Robot Path Planning output for a single drain — selected robot (`robot`), explainable `selectionScore` / `selectionReasons`, a battery-aware `route` (type `DIRECT` or `CHARGING_STOP`) with ordered `waypoints` (START / CHARGING_STATION / TARGET), `totalDistance`, `totalTravelSeconds`, `totalBatteryCost`, `formatTotalTravelTime`, `needsCharging`, optional `chargingStation`, `hasEnoughBattery`, and honest `status` (`"ROBOT_SELECTED"`, `"NO_ROBOT_AVAILABLE"`, `"NO_COORDINATES"`, `"DRAIN_NOT_FOUND"`). Never selects Charging robots or robots with active missions. See [robot-path-planning.md](robot-path-planning.md).
+  ```json
+  {
+    "status": "ROBOT_SELECTED",
+    "drain": { "id": 5, "zoneName": "Zone 5", "location": "Airport Road", "latitude": 9.923, "longitude": 78.1175 },
+    "robot": { "id": 1, "robotName": "Robot-A1", "status": "Idle", "batteryLevel": 100, "latitude": 9.925, "longitude": 78.12 },
+    "selectionScore": 91.7,
+    "selectionReasons": ["Distance: 0.003 (~5 m)", "Battery: 100%", "Sufficient battery for direct route"],
+    "hasEnoughBattery": true,
+    "route": {
+      "type": "DIRECT",
+      "totalDistance": 0.003,
+      "totalTravelSeconds": 300,
+      "totalBatteryCost": 60,
+      "formatTotalTravelTime": "5 m",
+      "needsCharging": false,
+      "chargingStation": null,
+      "waypoints": [
+        { "label": "START", "latitude": 9.925, "longitude": 78.12, "cumulativeDistance": 0 },
+        { "label": "TARGET", "latitude": 9.923, "longitude": 78.1175, "cumulativeDistance": 0.003 }
+      ]
+    },
+    "disclaimer": "Route is a coordinate-space approximation ...",
+    "generatedAt": "2026-01-01T12:00:00.000Z"
+  }
+  ```
+- **Response** (404): `{ "error": "Drain not found" }`
+- **Response** (400): `{ "error": "Invalid drain id" }`
+
 ### `GET /api/predictions/vision/:drainId`
 - **Access**: Public / Authenticated
 - **Query**: optional `history` (default 1, max 20) — how many recent inspections to include.
@@ -230,6 +276,15 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 ### `GET /api/dashboard/maintenance`
 - **Access**: Public / Authenticated
 - **Response** (200 OK): Maintenance summary + highest-maintenance-priority drain with recommendation, blockage risk, and drain overview list. See [maintenance-prediction.md](maintenance-prediction.md).
+
+### `GET /api/dashboard/decisions`
+- **Access**: Public / Authenticated
+- **Query**: optional `refresh=true` bypasses the 10-second summary cache.
+- **Response** (200 OK): AI Decision & Priority summary for the dashboard panel: total drains evaluated, `averagePriorityScore`, per-level `counts` + `distribution`, `insufficientData`, `actionDistribution`, `signalCoverage` and the top-5 `topPriority` drains (drainId, zone, location, priorityScore, priorityLevel, recommendedAction). See [decision-engine.md](decision-engine.md).
+
+### `GET /api/dashboard/robot-routes`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Robot path planning summary for the dashboard panel: `totalDrains`, `warningCritical` count, and a `routes` array covering every drain. Normal drains carry `planningStatus: "SKIPPED"`; Warning/Critical drains carry `planningStatus` (`ROBOT_SELECTED` / `NO_ROBOT_AVAILABLE` / `NO_COORDINATES`), the selected `robot`, the planned `route`, `selectionScore` and `selectionReasons`. Includes `disclaimer` and `generatedAt`. See [robot-path-planning.md](robot-path-planning.md).
 
 ---
 
@@ -279,3 +334,12 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 ### `GET /api/analytics/vision`
 - **Access**: Public / Authenticated
 - **Response** (200 OK): Vision inspection analytics driven by the `drain_vision_inspections` audit table: total inspections, `READY` vs `INSUFFICIENT_IMAGE_QUALITY` status split, level distribution, average visual risk / possible blockage scores, drains needing manual inspection (HIGH/CRITICAL, deduplicated), and 24-hour trend history. See [vision-inspection.md](vision-inspection.md).
+
+### `GET /api/analytics/decisions`
+- **Access**: Public / Authenticated
+- **Query**: optional `refresh=true` bypasses the 10-second summary cache.
+- **Response** (200 OK): AI Decision & Priority analytics in snake_case: `total_drains`, `eligible_drains`, `insufficient_data`, `average_priority_score`, `decision_low/moderate/high/critical`, `decision_distribution`, `action_distribution`, `signal_coverage`, `top_priority_drains`, `disclaimer`, `generated_at`. See [decision-engine.md](decision-engine.md).
+
+### `GET /api/analytics/robot-routes`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Robot path planning analytics in snake_case: `total_drains`, `warning_critical_drains`, `planned_routes`, `routes_by_type` (+ `routes_by_type_list`), `robots_selected`, `average_travel_seconds`, `average_distance`, `average_battery_cost`, `direct_routes`, `charging_stop_routes`, `disclaimer`, `generated_at`. See [robot-path-planning.md](robot-path-planning.md).

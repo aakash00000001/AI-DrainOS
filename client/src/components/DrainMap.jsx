@@ -66,6 +66,7 @@ function DrainMap() {
   const [navigationLines, setNavigationLines] = useState([]);
   const [chargingStations, setChargingStations] = useState([]);
   const [drains, setDrains] = useState([]);
+  const [plannedRoutes, setPlannedRoutes] = useState([]);
 
   // -------------------------
   // Load Robots
@@ -203,6 +204,28 @@ function DrainMap() {
   };
 
   // -------------------------
+  // Load Planned Routes
+  // -------------------------
+  const loadPlannedRoutes = async () => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/dashboard/robot-routes`
+      );
+
+      const planned = (response.data.routes || []).filter(
+        (route) =>
+          route.planningStatus === "ROBOT_SELECTED" &&
+          route.route &&
+          route.route.waypoints
+      );
+
+      setPlannedRoutes(planned);
+    } catch (error) {
+      console.log("Planned Route Error:", error);
+    }
+  };
+
+  // -------------------------
   // Load Drains
   // -------------------------
   const loadDrains = async () => {
@@ -223,6 +246,7 @@ function DrainMap() {
   useEffect(() => {
     loadDrains();
     loadChargingStations();
+    loadPlannedRoutes();
   }, []);
 
   // -------------------------
@@ -235,6 +259,7 @@ function DrainMap() {
       loadRobots();
       loadDrains();
       loadChargingStations();
+      loadPlannedRoutes();
     }, 5000);
 
     return () => clearInterval(interval);
@@ -281,6 +306,8 @@ function DrainMap() {
         <span>🔴 Critical</span>
         <span>🤖 Robot</span>
         <span>🔋 Charging Station</span>
+        <span>🔵 Direct Route</span>
+        <span>⚡ Route via Charger</span>
       </div>
 
       <MapContainer
@@ -319,6 +346,29 @@ function DrainMap() {
             }}
           />
         ))}
+
+        {/* Planned Robot Routes (Waypoints) */}
+        {plannedRoutes.map((route) => {
+          const positions = route.route.waypoints.map((wp) => [
+            Number(wp.latitude),
+            Number(wp.longitude),
+          ]);
+
+          const isCharging = route.route.type === "CHARGING_STOP";
+
+          return (
+            <Polyline
+              key={`planned-${route.drainId}`}
+              positions={positions}
+              pathOptions={{
+                color: isCharging ? "#f59e0b" : "#059669",
+                weight: 4,
+                dashArray: isCharging ? "8,6" : "4,4",
+                opacity: 0.9,
+              }}
+            />
+          );
+        })}
 
         {/* Drain Markers */}
         {drains.map((drain) => {

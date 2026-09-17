@@ -5,6 +5,8 @@ const pool = require("../config/db");
 const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
 const maintenanceService = require("../services/maintenancePredictionService");
+const decisionEngine = require("../services/decisionEngine");
+const robotPathPlanning = require("../services/robotPathPlanningService");
 const mqttService = require("../services/mqttService");
 
 router.get("/", async (req, res) => {
@@ -177,6 +179,46 @@ router.get("/maintenance", async (req, res) => {
       },
       drains: summary.drains
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/dashboard/decisions - AI Drain Decision & Priority
+// summary for the dashboard decision panel: average priority,
+// level distribution, recommended-action distribution, signal
+// coverage and the top-priority drains with their actions.
+// Additive - existing dashboard endpoints are untouched.
+// --------------------------------------------------
+
+router.get("/decisions", async (req, res) => {
+  try {
+    const summary = await decisionEngine.getDecisionSummary({
+      force: req.query.refresh === "true"
+    });
+
+    res.json(summary);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/dashboard/robot-routes - Path planning summary
+// --------------------------------------------------
+// Agentive summary of planned routes for all Warning/Critical
+// drains: selected robot, planned route (direct vs charging
+// stop), distance, time and battery estimates. Additive.
+// --------------------------------------------------
+
+router.get("/robot-routes", async (req, res) => {
+  try {
+    const summary = await robotPathPlanning.getAllRoutes();
+
+    res.json(summary);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server Error" });

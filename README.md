@@ -83,6 +83,9 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **Predictive Flood Forecasting & 15/30/60-Minute Early Warning**: An "Explainable Baseline Forecast" that fits a time-aware water-level trend and projects each drain's future risk at 15 / 30 / 60 minutes (reusing the flood risk engine), streamed live via `forecastUpdate`, with dedicated `Flood Forecast` early-warning alerts and an honest "insufficient history" status (no fabricated confidence).
 - **Drain Maintenance & Blockage Prediction**: A third independent analytical layer that looks at long-term operational patterns (cleaning history, rising trends, gas/temperature anomalies, alert frequency) to predict whether a drain needs inspection or cleaning soon. Honest baseline — never claims physical blockage, never reports confidence. Live `maintenanceUpdate` events, `Maintenance` alert type, audit trail in `maintenance_predictions` table, and a dashboard panel.
 - **Drain Vision Inspection**: Baseline **computer-vision** drain inspection driven by OpenCV (Python AI service) with an honest local PNG fallback. Upload a drain image (JPG/JPEG/PNG/WEBP, ≤5 MB), get visual risk / possible-blockage scores, findings and a recommendation — with an `INSUFFICIENT_IMAGE_QUALITY` status when an image cannot be analyzed (never fabricates results). Results stay **separate** from the sensor maintenance engine and are stored as metadata-only rows in the `drain_vision_inspections` table. Robot dispatch is only ever a recommendation flag — `missionEngine.js` remains the authority. Live `visionInspectionUpdate` events + `Vision Inspection` alert type (+ dashboard panel + analytics section).
+- **AI Drain Decision & Priority Engine**: An explainable attention-priority layer that blends the existing Flood Risk, Forecast, Maintenance and Vision scores (weights in `decisionEngine.js`) into a single bounded 0–100 priority with a recommended action (monitor → close watch → inspect → immediate robot inspection), human-readable reasons, weighted contributing factors, and a robot dispatch recommendation (nearest / already-assigned / battery-too-low / none). Missing signals are reported as unavailable — `INSUFFICIENT_DATA` with a null score when nothing is known. Live `decisionUpdate` events (level change or ≥3-point move), dashboard panel + dedicated "AI Decisions" page, and an analytics section. Read-only: it never writes to the database and never triggers dispatches itself.
+- **Intelligent Robot Path Planning & Route Optimization**: An explainable, battery-aware planning layer for high/critical drains. It selects the best available robot (never Charging or on an active mission) using a deterministic score over distance, battery and battery sufficiency, then plans a coordinate-space route — `START → TARGET` (direct) or `START → CHARGING_STATION → TARGET` when the direct route is not feasible — with cumulative distance, time and battery estimates and an honest `NO_ROBOT_AVAILABLE` state. Live `robotRouteUpdate` events, a `RobotRoutePlanner` dashboard panel, and route polylines on the drain map. Reuses the existing movement-loop constants; `missionEngine.js` and the robot movement loop are untouched.
+- **Interactive 3D Digital Twin**: An additive, read-only 3D visualization layer (`three.js` + `@react-three/fiber` + `@react-three/drei`) rendered as a new **Digital Twin** page plus a compact live preview on the Dashboard. It aggregates the **existing** REST APIs and consumes the **existing** single Socket.IO connection to show drains, sensors, robots, charging stations and planner routes — with real flood-risk rings, separate AI-decision bars, live sensor water levels, click-to-inspect details (lazy per-drain risk/forecast/maintenance/decision/vision calls) and a non-3D data list fallback. It never writes to the database and never adds a second socket connection or movement loop. Coordinates use a documented visualization grid (not survey-grade GIS). See [docs/digital-twin.md](docs/digital-twin.md).
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -110,7 +113,7 @@ graph TD
 Detailed architectural specifications are available in [docs/architecture.md](docs/architecture.md).
 
 ## 7. Frontend Architecture
-Built with React 19, Vite 8, Vanilla CSS design tokens, React-Leaflet, Chart.js / Recharts, and Socket.IO client. Uses modular layout components (`DashboardLayout`, `Sidebar`, `Header`) and views (`UsersPage`, `SettingsPage`, `MissionControl`).
+Built with React 19, Vite 8, Vanilla CSS design tokens, React-Leaflet, Chart.js / Recharts, and Socket.IO client. Uses modular layout components (`DashboardLayout`, `Sidebar`, `Header`) and views (`UsersPage`, `SettingsPage`, `MissionControl`). The Digital Twin layer adds `three.js` / `@react-three/fiber` / `@react-three/drei` canvases with memoized per-entity meshes (`DigitalTwin.jsx`) driven by a pure shared reducer (`digitalTwinUtils.mjs`) that is also unit-tested from the Node test suite.
 
 ## 8. Backend Architecture
 Node.js + Express backend featuring modular routes (`auth`, `drains`, `robots`, `missions`, `sensors`, `alerts`, `predictions`, `settings`), JWT authentication middleware, role enforcement (`adminOnly`), and a 5-second event loop driving real-time simulation logic.
@@ -183,6 +186,55 @@ maintenance engine and robot dispatch remains recommendation-only
 📄 Full documentation (features, scoring, honest status, API, alerts, ML replacement):
 [docs/vision-inspection.md](docs/vision-inspection.md).
 
+## 15e. Robot Path Planning & Route Optimization
+The path planning layer (`server/services/robotPathPlanningService.js`) answers *which
+robot should go, can it get there, and how?* for high/critical drains. It selects the
+best available robot (**never** a Charging robot or one with an active mission) using a
+deterministic score over distance, battery and battery sufficiency, then plans a
+coordinate-space route derived from the **existing** movement-loop constants
+(step `0.00005`, 5 s tick, 1 battery%/tick): a **direct** route (`START → TARGET`) when
+the battery suffices, or a **charging-stop** route (`START → CHARGING_STATION → TARGET`)
+otherwise. Every route returns ordered waypoints with cumulative distance, time and
+battery estimates plus an explicit disclaimer. When no robot qualifies the honest state
+is `NO_ROBOT_AVAILABLE` with a reason. Results stream live via `robotRouteUpdate`, the
+dashboard adds a **Robot Route Planner** panel, and the drain map draws the planned
+routes as polylines. The service never writes to the database and never dispatches —
+`missionEngine.js` and the robot movement loop are untouched.
+
+📄 Full documentation (constants, selection scoring, honest states, route planning, API,
+events): [docs/robot-path-planning.md](docs/robot-path-planning.md).
+
+## 15f. Interactive 3D Digital Twin
+The digital twin layer is a **client-side, read-only** visualization (`three.js`,
+`@react-three/fiber`, `@react-three/drei`) that renders the entire system state in one
+interactive 3D scene: drains as color-coded manholes with flood-risk rings and separate
+AI-decision bars, sensor nodes, robots (with battery bars), charging stations and the
+planner's direct/charging-stop route lines. It aggregates the **existing** REST
+endpoints (`/api/drains`, `/api/sensors`, `/api/robots`, `/api/charging-stations`,
+`/api/dashboard/robot-routes`, `/api/dashboard/decisions`), reuses the **existing**
+single Socket.IO connection (`sensorUpdate`, `floodRiskUpdate`, `forecastUpdate`,
+`maintenanceUpdate`, `visionInspectionUpdate`, `decisionUpdate`, `robotRouteUpdate`,
+`dashboardUpdate`) and merges everything through one pure, unit-tested reducer. A
+per-drain click lazy-loads risk/forecast/maintenance/decision/vision detail from the
+existing prediction endpoints. Highlights:
+
+- **Requirement #14 layout**: header stats → 3D scene → selected-object details.
+- **Honesty contract**: real data only; `Data unavailable` instead of fabricated values;
+  flood risk and AI decision are always separate indicators.
+- **Requirement #17 accessibility**: a non-3D data list/table fallback below the scene.
+- **Requirement #18 responsiveness**: mobile canvas + touch-friendly OrbitControls.
+- **Requirement #21 tests**: 25 new tests under `server/tests/digitalTwin.test.js`
+  covering clamping, level banding, coordinate conversion, normalization, route
+  geometry, metrics, every reducer event and the consumed API shapes.
+- **Performance**: per-id memoized meshes keyed on primitives so a live event only
+  re-renders the affected object; no second socket, no second movement loop.
+- **Coordinate caveat**: lat/lng → local X/Z uses a deterministic visualization scale
+  (1000 units/degree around the bounding-box midpoint) — deliberately **not**
+  survey-grade GIS.
+
+📄 Full documentation (architecture, data flows, coordinate contract, events, APIs,
+limitations): [docs/digital-twin.md](docs/digital-twin.md).
+
 ## 16. Manual Mission Control
 UI interface (`pages/MissionControl.jsx`) enabling operators to manually select specific drains and dispatch available robots on demand.
 
@@ -215,13 +267,15 @@ table is added the same way via `database/migrations/004_drain_vision_inspection
 - `criticalAlert`: Fired when a **new** Critical alert is created.
 - `batteryLow`: Fired when a robot battery drops <= 20% and is routed to a charging station.
 - `dashboardUpdate`: Emitted every 5s with latest system stat counters.
-- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, plus additive flood risk score/level/trend, 60-min forecast score/level/trend, and maintenance score/level/blockage-risk/recommendation).
+- `sensorUpdate`: Emitted when a valid MQTT sensor reading is stored (drainId, sensorId, water/gas/temp, AI prediction, plus additive flood risk score/level/trend, 60-min forecast score/level/trend, maintenance score/level/blockage-risk/recommendation, and AI decision priority score/level/recommended action — throttled per drain).
 - `floodRiskUpdate`: Emitted when a drain's Flood Risk level changes (or its score moves ≥ 2 points) with the explainable risk breakdown + AI prediction.
 - `forecastUpdate`: Emitted when a drain's worst predicted (60-min) forecast level changes (or its score moves ≥ 2 points) with the 15/30/60-minute horizon projections and trend information.
 - `maintenanceUpdate`: Emitted when a drain's maintenance level changes (or its maintenance score moves ≥ 3 points) with maintenance/blockage scores, level, inspection priority, recommendation, and explainable reasons.
 - `Maintenance` alert type: created when a drain's maintenance level is HIGH (Medium severity) or CRITICAL (Critical severity), deduplicated per drain, resolved when level drops below HIGH.
 - `visionInspectionUpdate`: Emitted after a drain vision inspection completes (status READY or INSUFFICIENT_IMAGE_QUALITY) with visual-risk / possible-blockage scores, level, findings, recommendation, robot-inspection flag and image dimensions.
 - `Vision Inspection` alert type: created when a vision inspection level is HIGH (Medium severity) or CRITICAL (Critical severity), deduplicated per drain, upgrade-only, resolved when a later inspection is LOW/MODERATE.
+- `decisionUpdate`: Emitted when a drain's AI Decision priority level changes (or its score moves ≥ 3 points) with the full decision payload — priority score/level, recommended action, reasons, contributing factors, robot recommendation and data availability (see [docs/decision-engine.md](docs/decision-engine.md)).
+- `robotRouteUpdate`: Emitted when a drain's robot route planning meaningfully changes (selected robot, planning status, route type or target drain) with the full planning payload — selected robot, route type, waypoints, distance/time/battery estimates and selection reasons (see [docs/robot-path-planning.md](docs/robot-path-planning.md)).
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -318,7 +372,7 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **170 tests** covering auth, RBAC, drains, robots, missions,
+The suite currently includes **237 tests** covering auth, RBAC, drains, robots, missions,
 alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
 database mapping, AI prediction, socket emission, alert escalation, and broker-failure
 resilience), the flood risk engine (normalization, trend, classification, historical
@@ -327,10 +381,16 @@ fallback, and the risk REST endpoints), the predictive flood forecast engine
 (time-series cleaning, trend fit, direction labels, projections, honest status handling,
 determinism, no-fabricated-confidence contract, `Flood Forecast` alerts,
 `forecastUpdate` dedupe/emission, and the forecast REST/analytics endpoints), the
-maintenance engine, and the drain vision inspection pipeline (image-type detection,
+maintenance engine, the drain vision inspection pipeline (image-type detection,
 PNG decoder, feature extraction, scoring thresholds, honest-status contract, upload
 validation, persistence, history, `Vision Inspection` alert lifecycle, and the vision
-REST/analytics endpoints).
+REST/analytics endpoints), the robot path planning engine (movement-loop constants,
+coordinate distance, time/battery estimation, robot selection scoring, honest
+`NO_ROBOT_AVAILABLE`, direct and charging-stop route planning with waypoint consistency,
+the aggregate summary, the three route REST endpoints, and `robotRouteUpdate` emission),
+and the interactive Digital Twin (clamping, level banding, coordinate conversion,
+entity normalization, route geometry, metrics, every live reducer event, and the
+read-only API shapes it consumes).
 
 ## 32. Project Folder Structure
 ```
@@ -343,8 +403,15 @@ AI-DrainOS/
 ├── client/                  # React Vite Frontend Application
 │   ├── src/
 │   │   ├── components/
+│   │   │   ├── DigitalTwin.jsx            # 3D scene (three.js)
+│   │   │   ├── DigitalTwinPage.jsx        # full Digital Twin page
+│   │   │   ├── DigitalTwinPreview.jsx     # compact dashboard preview
+│   │   │   └── DigitalTwinLegend.jsx      # shared palette legend
 │   │   ├── pages/
 │   │   ├── services/
+│   │   │   ├── digitalTwinService.js      # REST aggregation (read-only)
+│   │   │   └── digitalTwinUtils.mjs       # pure shared logic + reducer
+│   │   ├── styles/digitaltwin.css
 │   │   └── App.jsx
 │   └── vite.config.js
 ├── server/                  # Node.js Express Backend & Socket.IO
@@ -370,7 +437,9 @@ AI-DrainOS/
 │   ├── mqtt.md
 │   ├── flood-risk.md
 │   ├── forecasting.md
-│   └── vision-inspection.md
+│   ├── vision-inspection.md
+│   ├── robot-path-planning.md
+│   └── digital-twin.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example

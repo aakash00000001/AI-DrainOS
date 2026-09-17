@@ -8,6 +8,8 @@ const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
 const maintenanceService = require("../services/maintenancePredictionService");
 const visionService = require("../services/drainVisionService");
+const decisionEngine = require("../services/decisionEngine");
+const robotPathPlanning = require("../services/robotPathPlanningService");
 const mqttService = require("../services/mqttService");
 
 const AI_SERVICE_URL =
@@ -297,6 +299,75 @@ router.get("/maintenance/:drainId", async (req, res) => {
     console.log(err.message);
 
     res.status(500).json({ error: "Maintenance prediction failed" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/predictions/decision/:drainId
+// --------------------------------------------------
+// AI Drain Decision & Priority Engine for a single drain:
+// a bounded 0-100 attention-priority score blending the existing
+// flood risk, forecast, maintenance and vision signals, plus the
+// recommended action, reasons, contributing factors and robot
+// dispatch context. Missing signals are reported as unavailable
+// (status INSUFFICIENT_DATA when nothing is available) - no
+// fabricated values. Same public model as GET /api/predictions
+// (no auth).
+// --------------------------------------------------
+
+router.get("/decision/:drainId", async (req, res) => {
+  try {
+    const drainId = Number(req.params.drainId);
+
+    if (!Number.isInteger(drainId) || drainId <= 0) {
+      return res.status(400).json({ error: "Invalid drain id" });
+    }
+
+    const decision = await decisionEngine.getDrainDecision(drainId);
+
+    if (!decision) {
+      return res.status(404).json({ error: "Drain not found" });
+    }
+
+    res.json(decision);
+  } catch (err) {
+    console.log("========== DECISION ENGINE API ERROR ==========");
+    console.log(err.message);
+
+    res.status(500).json({ error: "Decision calculation failed" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/predictions/robot-route/:drainId
+// --------------------------------------------------
+// Intelligent robot path planning & route optimization for a
+// single drain: selects the best available robot, plans a
+// battery-aware route (direct or via a charging station) and
+// returns explainable waypoints, distance, time and battery
+// estimates. Additive - the decision engine is untouched.
+// --------------------------------------------------
+
+router.get("/robot-route/:drainId", async (req, res) => {
+  try {
+    const drainId = Number(req.params.drainId);
+
+    if (!Number.isInteger(drainId) || drainId <= 0) {
+      return res.status(400).json({ error: "Invalid drain id" });
+    }
+
+    const result = await robotPathPlanning.planRoute(drainId);
+
+    if (result.status === "DRAIN_NOT_FOUND") {
+      return res.status(404).json({ error: "Drain not found" });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.log("========== ROBOT PATH PLANNING API ERROR ==========");
+    console.log(err.message);
+
+    res.status(500).json({ error: "Robot route planning failed" });
   }
 });
 

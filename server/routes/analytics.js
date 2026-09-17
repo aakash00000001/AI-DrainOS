@@ -6,6 +6,8 @@ const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
 const maintenanceService = require("../services/maintenancePredictionService");
 const visionService = require("../services/drainVisionService");
+const decisionEngine = require("../services/decisionEngine");
+const robotPathPlanning = require("../services/robotPathPlanningService");
 
 router.get("/", async (req, res) => {
 
@@ -195,6 +197,120 @@ router.get("/vision", async (req, res) => {
   try {
     const data = await visionService.getVisionAnalytics();
     res.json(data);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/decisions - AI Decision & Priority summary
+// --------------------------------------------------
+
+router.get("/decisions", async (req, res) => {
+  try {
+    const summary = await decisionEngine.getDecisionSummary({
+      force: req.query.refresh === "true"
+    });
+
+    res.json({
+      total_drains: summary.totalDrains,
+      eligible_drains: summary.eligibleDrains,
+      insufficient_data: summary.insufficientData,
+      average_priority_score: summary.averagePriorityScore,
+      decision_low: summary.counts.low,
+      decision_moderate: summary.counts.moderate,
+      decision_high: summary.counts.high,
+      decision_critical: summary.counts.critical,
+      decision_distribution: summary.distribution,
+      action_distribution: summary.actionDistribution,
+      signal_coverage: summary.signalCoverage,
+      top_priority_drains: summary.topPriority,
+      disclaimer: summary.disclaimer,
+      generated_at: summary.generatedAt
+    });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/robot-routes - Route planning analytics
+// --------------------------------------------------
+// Analytics-flavoured view of the robot path planning engine:
+// selected robots, route types, distance/time ranges and
+// battery sufficiency for Warning/Critical drains. Additive.
+// --------------------------------------------------
+
+router.get("/robot-routes", async (req, res) => {
+  try {
+    const summary = await robotPathPlanning.getAllRoutes();
+
+    const planned = summary.routes.filter(
+      (r) => r.planningStatus === "ROBOT_SELECTED"
+    );
+
+    const routesByType = { DIRECT: 0, CHARGING_STOP: 0 };
+    const robotsSelected = [];
+    let totalTravelSeconds = 0;
+    let totalDistance = 0;
+    let totalBatteryCost = 0;
+    let withEnoughBattery = 0;
+
+    for (const route of planned) {
+      if (route.route) {
+        routesByType[route.route.type] =
+          (routesByType[route.route.type] || 0) + 1;
+
+        totalTravelSeconds += route.route.totalTravelSeconds;
+        totalDistance += route.route.totalDistance;
+        totalBatteryCost += route.route.totalBatteryCost;
+
+        if (route.route.type === "DIRECT") {
+          withEnoughBattery += 1;
+        }
+      }
+
+      if (route.robot) {
+        robotsSelected.push({
+          drainId: route.drainId,
+          zone: route.zone,
+          location: route.location,
+          robotId: route.robot.id,
+          robotName: route.robot.robotName,
+          batteryLevel: route.robot.batteryLevel,
+          routeType: route.route ? route.route.type : null
+        });
+      }
+    }
+
+    res.json({
+      total_drains: summary.totalDrains,
+      warning_critical_drains: summary.warningCritical,
+      planned_routes: planned.length,
+      routes_by_type: routesByType,
+      routes_by_type_list: Object.entries(routesByType).map(
+        ([type, count]) => ({ type, count })
+      ),
+      robots_selected: robotsSelected,
+      average_travel_seconds:
+        planned.length > 0
+          ? Math.round(totalTravelSeconds / planned.length)
+          : null,
+      average_distance:
+        planned.length > 0
+          ? Math.round((totalDistance / planned.length) * 1000) / 1000
+          : null,
+      average_battery_cost:
+        planned.length > 0
+          ? Math.round((totalBatteryCost / planned.length) * 10) / 10
+          : null,
+      direct_routes: routesByType.DIRECT,
+      charging_stop_routes: routesByType.CHARGING_STOP,
+      disclaimer: summary.disclaimer,
+      generated_at: summary.generatedAt
+    });
   } catch (err) {
     console.log(err);
     res.status(500).json({ error: "Analytics Error" });

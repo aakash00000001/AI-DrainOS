@@ -6,7 +6,8 @@ import {
   FaWater,
   FaRobot,
   FaExclamationTriangle,
-  FaChartLine
+  FaChartLine,
+  FaListOl
 } from "react-icons/fa";
 
 import {
@@ -37,6 +38,7 @@ function AnalyticsReport() {
 
   const [analytics, setAnalytics] = useState(null);
   const [error, setError] = useState(false);
+  const [decisions, setDecisions] = useState(null);
 
   const loadAnalytics = async () => {
 
@@ -60,11 +62,35 @@ function AnalyticsReport() {
 
   };
 
+  const loadDecisions = async () => {
+
+    try {
+
+      const response = await axios.get(
+        `${API_URL}/analytics/decisions`
+      );
+
+      setDecisions(response.data);
+
+    }
+
+    catch(err){
+
+      console.log(err);
+
+    }
+
+  };
+
   useEffect(() => {
 
     loadAnalytics();
+    loadDecisions();
 
-    const interval = setInterval(loadAnalytics,5000);
+    const interval = setInterval(() => {
+      loadAnalytics();
+      loadDecisions();
+    }, 5000);
 
     return ()=>clearInterval(interval);
 
@@ -381,6 +407,82 @@ function AnalyticsReport() {
       </div>
 
     </div>
+
+    <br/>
+  </>
+)}
+
+{decisions && decisions.total_drains !== undefined && (
+  <>
+    <h3><FaListOl /> AI Decision & Priority Summary</h3>
+
+    <div className="analytics-grid">
+
+      <div className="analytics-item">
+        <FaChartLine className="analytics-icon"/>
+        <h3>{decisions.total_drains}</h3>
+        <p>Drains Evaluated</p>
+      </div>
+
+      <div className="analytics-item">
+        <FaChartLine className="analytics-icon"/>
+        <h3>{decisions.average_priority_score !== null ? decisions.average_priority_score : "n/a"}</h3>
+        <p>Avg Priority Score</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{decisions.decision_low}</h3>
+        <p>Decision LOW</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{decisions.decision_moderate}</h3>
+        <p>Decision MODERATE</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{decisions.decision_high}</h3>
+        <p>Decision HIGH</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{decisions.decision_critical}</h3>
+        <p>Decision CRITICAL</p>
+      </div>
+
+      <div className="analytics-item">
+        <h3>{decisions.insufficient_data}</h3>
+        <p>Insufficient Data</p>
+      </div>
+
+    </div>
+
+    {decisions.top_priority_drains && decisions.top_priority_drains.length > 0 && (
+      <div style={{ marginTop: "12px" }}>
+        <p style={{ fontSize: "0.85rem", color: "#64748b", marginBottom: "4px" }}>Top Priority Drains:</p>
+        {decisions.top_priority_drains.map((drain) => (
+          <span
+            key={drain.drainId}
+            style={{
+              display: "inline-block",
+              padding: "4px 10px",
+              borderRadius: "12px",
+              fontSize: "0.8rem",
+              fontWeight: "600",
+              color: "#fff",
+              marginRight: "8px",
+              marginBottom: "4px",
+              background:
+                drain.priorityLevel === "CRITICAL" ? "#dc2626" :
+                drain.priorityLevel === "HIGH" ? "#ea580c" :
+                drain.priorityLevel === "MODERATE" ? "#f59e0b" : "#16a34a"
+            }}
+          >
+            {drain.location} ({drain.priorityScore}/100 {drain.priorityLevel})
+          </span>
+        ))}
+      </div>
+    )}
 
     <br/>
   </>

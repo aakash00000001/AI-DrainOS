@@ -13,6 +13,8 @@ import FloodRiskPanel from "./components/FloodRiskPanel";
 import ForecastPanel from "./components/ForecastPanel";
 import MaintenancePanel from "./components/MaintenancePanel";
 import DrainVisionInspection from "./components/DrainVisionInspection";
+import AIDecisionPanel from "./components/AIDecisionPanel";
+import RobotRoutePlanner from "./components/RobotRoutePlanner";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -24,6 +26,9 @@ import AnalyticsReport from "./components/AnalyticsReport";
 import DrainTable from "./components/DrainTable";
 import StatisticsChart from "./components/charts/StatisticsChart";
 import PDFReport from "./components/PDFReport";
+
+import DigitalTwinPreview from "./components/DigitalTwinPreview";
+import DigitalTwinPage from "./components/DigitalTwinPage";
 
 import socket from "./services/socket";
 
@@ -96,6 +101,14 @@ function App() {
 
     });
 
+    socket.on("decisionUpdate", (decision) => {
+
+      toast.info(
+        `🧠 ${decision.location}: ${decision.priorityLevel} priority (${decision.priorityScore}/100) - ${decision.recommendedAction}`
+      );
+
+    });
+
     socket.on("dashboardUpdate", (data) => {
 
       setDashboard(data);
@@ -111,6 +124,7 @@ function App() {
       socket.off("batteryLow");
       socket.off("dashboardUpdate");
       socket.off("visionInspectionUpdate");
+      socket.off("decisionUpdate");
 
     };
 
@@ -232,6 +246,14 @@ function App() {
             drains={drains}
           />
 
+          <AIDecisionPanel />
+
+          <RobotRoutePlanner />
+
+          <DigitalTwinPreview
+            onOpen={() => handleNavigate("digitaltwin")}
+          />
+
           <div className="sections">
 
             <RobotSimulation />
@@ -274,6 +296,24 @@ function App() {
           <h2>🗺️ Drain Map</h2>
 
           <DrainMap />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Digital Twin (Update #17)
+    if (activePage === "digitaltwin") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>🧊 Digital Twin (3D)</h2>
+
+          <DigitalTwinPage />
 
         </div>
 
@@ -370,6 +410,26 @@ function App() {
           <StatisticsChart />
 
           <PDFReport />
+
+        </div>
+
+      );
+
+    }
+
+
+    // AI Decisions
+    if (activePage === "decisions") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>🧠 AI Drain Decision Engine</h2>
+
+          <AIDecisionPanel />
+
+          <RobotRoutePlanner />
 
         </div>
 

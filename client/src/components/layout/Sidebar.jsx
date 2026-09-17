@@ -1,6 +1,7 @@
 import {
   FaTachometerAlt,
   FaMapMarkedAlt,
+  FaCube,
   FaRobot,
   FaBroadcastTower,
   FaBell,
@@ -8,7 +9,8 @@ import {
   FaChartBar,
   FaCog,
   FaUsers,
-  FaSignOutAlt
+  FaSignOutAlt,
+  FaListOl
 } from "react-icons/fa";
 
 import "../../styles/sidebar.css";
@@ -43,6 +45,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
           >
             <FaMapMarkedAlt />
             <span>Drain Map</span>
+          </li>
+
+          {/* Digital Twin */}
+          <li
+            className={activePage === "digitaltwin" ? "active" : ""}
+            onClick={() => onNavigate("digitaltwin")}
+          >
+            <FaCube />
+            <span>Digital Twin</span>
           </li>
 
           {/* Robots */}
@@ -88,6 +99,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
           >
             <FaChartBar />
             <span>Analytics</span>
+          </li>
+
+          {/* AI Decisions */}
+          <li
+            className={activePage === "decisions" ? "active" : ""}
+            onClick={() => onNavigate("decisions")}
+          >
+            <FaListOl />
+            <span>AI Decisions</span>
           </li>
 
           {/* Users (Admin only) */}

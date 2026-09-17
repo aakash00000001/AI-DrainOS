@@ -197,5 +197,10 @@ npm test
 - AI calls are throttled per drain (max one per 5s and skipped when values
   are unchanged) to avoid spamming the AI service.
 - The `sensorUpdate` Socket.IO event uses the resolved database sensor id.
+- The `sensorUpdate` payload additionally carries the AI Decision engine output
+  (`decisionPriorityScore`, `decisionPriorityLevel`, `decisionRecommendedAction`). This is
+  purely additive and throttled per drain (recomputed at most every 30 s); a decision
+  engine problem never blocks the sensor pipeline. See
+  [decision-engine.md](decision-engine.md).
 - No sensor history table is created: the existing `sensors` row is updated per
   reading, matching the current simulator behaviour.

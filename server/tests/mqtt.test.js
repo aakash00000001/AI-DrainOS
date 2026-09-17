@@ -161,6 +161,51 @@ test("handleMessage - stores a valid reading and emits sensorUpdate", async () =
   assert.equal(update.payload.timestamp, "2026-08-05T10:30:00.000Z");
 });
 
+// --------------------------------------------------
+// Additive decision fields in sensorUpdate
+// --------------------------------------------------
+
+test("handleMessage - sensorUpdate additively carries AI Decision fields", async () => {
+  const io = fakeIo();
+  const predict = async () => ({ prediction: "HIGH" });
+
+  // Drain 5 is seeded with flood risk + an open Critical alert, so
+  // the decision engine is READY from the existing signals alone.
+  const result = await mqttService.handleMessage(
+    "ai-drainos/drains/5/sensors/5",
+    JSON.stringify({ water_level: 88, gas_level: 60, temperature: 34 }),
+    { io, predict }
+  );
+
+  assert.equal(result.status, "accepted");
+
+  const update = io.emitted.find((e) => e.event === "sensorUpdate");
+  assert.ok(update);
+
+  // Fields must exist and be additively attached (never remove the
+  // existing sensorUpdate contract).
+  assert.equal("decisionPriorityScore" in update.payload, true);
+  assert.equal("decisionPriorityLevel" in update.payload, true);
+  assert.equal("decisionRecommendedAction" in update.payload, true);
+
+  // When a READY decision is produced the fields carry real values.
+  if (result.decisionPriorityScore !== null) {
+    assert.ok(
+      Number.isInteger(result.decisionPriorityScore),
+      "decisionPriorityScore must be an integer"
+    );
+    assert.ok(result.decisionPriorityScore >= 0 && result.decisionPriorityScore <= 100);
+    assert.ok(
+      ["LOW", "MODERATE", "HIGH", "CRITICAL"].includes(result.decisionPriorityLevel)
+    );
+    assert.ok(typeof result.decisionRecommendedAction === "string");
+  }
+
+  // The original sensorUpdate fields are untouched.
+  assert.equal(update.payload.prediction, "HIGH");
+  assert.equal(update.payload.riskScore, result.riskScore);
+});
+
 test("handleMessage - unknown drain is rejected without crashing", async () => {
   const io = fakeIo();
 

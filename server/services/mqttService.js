@@ -24,6 +24,7 @@ const pool = require("../config/db");
 const floodRisk = require("./floodRiskService");
 const floodForecast = require("./floodForecastService");
 const maintenanceService = require("./maintenancePredictionService");
+const decisionEngine = require("./decisionEngine");
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
@@ -53,6 +54,13 @@ const forecastState = new Map();
 const maintenanceState = new Map();
 const mqttMaintenanceThrottle = new Map();
 const MAINTENANCE_RECOMPUTE_INTERVAL_MS = 30000;
+
+// Per-drain decision - the engine recomputes the full priority
+// blend (forecast + maintenance + vision + alerts + robots) so it
+// is re-run per drain at most every DECISION_RECOMPUTE_INTERVAL_MS
+// and only ever adds fields to the existing sensorUpdate payload.
+const mqttDecisionThrottle = new Map();
+const DECISION_RECOMPUTE_INTERVAL_MS = 30000;
 
 let aiUnreachableLoggedAt = null;
 
@@ -760,6 +768,46 @@ async function handleMessage(topic, rawPayload, context = {}) {
     }
 
     // --------------------------------------------------
+    // 7d. AI Decision & Priority Engine (additive + throttled).
+    // The decision engine recomputes the full priority blend from
+    // the existing flood risk / forecast / maintenance / vision /
+    // alert / robot signals, so it is re-run per drain at most
+    // every DECISION_RECOMPUTE_INTERVAL_MS and can never break
+    // the sensor pipeline. getDrainDecision also emits
+    // decisionUpdate only on a meaningful change. The result is
+    // added to sensorUpdate as new fields only.
+    // --------------------------------------------------
+
+    let decisionSummary = null;
+
+    try {
+      const decisionThrottle = mqttDecisionThrottle.get(drainId);
+
+      if (
+        !decisionThrottle ||
+        Date.now() - decisionThrottle.lastComputedAt >=
+          DECISION_RECOMPUTE_INTERVAL_MS
+      ) {
+        const decisionResult = await decisionEngine.getDrainDecision(drainId);
+
+        mqttDecisionThrottle.set(drainId, { lastComputedAt: Date.now() });
+
+        if (decisionResult && decisionResult.status === "READY") {
+          decisionSummary = {
+            decisionPriorityScore: decisionResult.priorityScore,
+            decisionPriorityLevel: decisionResult.priorityLevel,
+            decisionRecommendedAction: decisionResult.recommendedAction
+          };
+        }
+      }
+    } catch (decisionErr) {
+      // A decision engine problem must never break the existing
+      // MQTT -> sensor -> AI -> alert pipeline.
+      console.log("⚠️ Decision engine skipped:", decisionErr.message);
+      decisionSummary = null;
+    }
+
+    // --------------------------------------------------
     // 8. Emit live update
     // --------------------------------------------------
 
@@ -806,6 +854,12 @@ async function handleMessage(topic, rawPayload, context = {}) {
         maintenance && maintenance.status === "READY"
           ? maintenance.maintenanceRecommendation
           : null,
+      decisionPriorityScore:
+        decisionSummary ? decisionSummary.decisionPriorityScore : null,
+      decisionPriorityLevel:
+        decisionSummary ? decisionSummary.decisionPriorityLevel : null,
+      decisionRecommendedAction:
+        decisionSummary ? decisionSummary.decisionRecommendedAction : null,
       timestamp: reading.timestamp || new Date().toISOString()
     };
 
