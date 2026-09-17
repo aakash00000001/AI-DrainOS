@@ -8,6 +8,7 @@ const maintenanceService = require("../services/maintenancePredictionService");
 const visionService = require("../services/drainVisionService");
 const decisionEngine = require("../services/decisionEngine");
 const robotPathPlanning = require("../services/robotPathPlanningService");
+const incidentService = require("../services/incidentService");
 
 router.get("/", async (req, res) => {
 
@@ -64,6 +65,17 @@ router.get("/", async (req, res) => {
       console.log("⚠️ Vision analytics skipped:", visionErr.message);
     }
 
+    // Incident analytics are additive and best-effort (mirrors the
+    // vision pattern): a missing incidents table never breaks the
+    // existing analytics contract.
+    let incidentAnalytics = null;
+
+    try {
+      incidentAnalytics = await incidentService.getAnalytics();
+    } catch (incidentErr) {
+      console.log("⚠️ Incident analytics skipped:", incidentErr.message);
+    }
+
     res.json({
       total_cleanings: Number(totalCleanings.rows[0].count),
       total_missions: Number(totalMissions.rows[0].count),
@@ -104,7 +116,29 @@ router.get("/", async (req, res) => {
       vision_high: visionSummary ? visionSummary.counts.high : 0,
       vision_critical: visionSummary ? visionSummary.counts.critical : 0,
       vision_distribution: visionSummary ? visionSummary.distribution : [],
-      vision_drains_with_issues: visionSummary ? visionSummary.drainsWithVisualIssues : 0
+      vision_drains_with_issues: visionSummary ? visionSummary.drainsWithVisualIssues : 0,
+      incident_total: incidentAnalytics ? incidentAnalytics.total : 0,
+      incident_active:
+        incidentAnalytics && incidentAnalytics.by_status
+          ? incidentAnalytics.by_status.OPEN +
+            incidentAnalytics.by_status.ACKNOWLEDGED +
+            incidentAnalytics.by_status.RESPONDING
+          : 0,
+      incident_responding:
+        incidentAnalytics && incidentAnalytics.by_status
+          ? incidentAnalytics.by_status.RESPONDING
+          : 0,
+      incident_resolved:
+        incidentAnalytics && incidentAnalytics.by_status
+          ? incidentAnalytics.by_status.RESOLVED
+          : 0,
+      incident_by_severity: incidentAnalytics ? incidentAnalytics.by_severity : null,
+      incident_average_response_minutes: incidentAnalytics
+        ? incidentAnalytics.average_response_minutes
+        : null,
+      incident_average_resolution_minutes: incidentAnalytics
+        ? incidentAnalytics.average_resolution_minutes
+        : null
     });
 
   }
@@ -229,6 +263,24 @@ router.get("/decisions", async (req, res) => {
       disclaimer: summary.disclaimer,
       generated_at: summary.generatedAt
     });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/incidents - Incident statistics
+// --------------------------------------------------
+// Incidents by severity / status / source plus average response and
+// resolution times. Averages are honest: null until enough REAL
+// resolved/responding data exists (never fabricated).
+// --------------------------------------------------
+
+router.get("/incidents", async (req, res) => {
+  try {
+    const data = await incidentService.getAnalytics();
+    res.json(data);
   } catch (err) {
     console.log(err);
     res.status(500).json({ error: "Analytics Error" });

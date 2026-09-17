@@ -86,6 +86,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **AI Drain Decision & Priority Engine**: An explainable attention-priority layer that blends the existing Flood Risk, Forecast, Maintenance and Vision scores (weights in `decisionEngine.js`) into a single bounded 0–100 priority with a recommended action (monitor → close watch → inspect → immediate robot inspection), human-readable reasons, weighted contributing factors, and a robot dispatch recommendation (nearest / already-assigned / battery-too-low / none). Missing signals are reported as unavailable — `INSUFFICIENT_DATA` with a null score when nothing is known. Live `decisionUpdate` events (level change or ≥3-point move), dashboard panel + dedicated "AI Decisions" page, and an analytics section. Read-only: it never writes to the database and never triggers dispatches itself.
 - **Intelligent Robot Path Planning & Route Optimization**: An explainable, battery-aware planning layer for high/critical drains. It selects the best available robot (never Charging or on an active mission) using a deterministic score over distance, battery and battery sufficiency, then plans a coordinate-space route — `START → TARGET` (direct) or `START → CHARGING_STATION → TARGET` when the direct route is not feasible — with cumulative distance, time and battery estimates and an honest `NO_ROBOT_AVAILABLE` state. Live `robotRouteUpdate` events, a `RobotRoutePlanner` dashboard panel, and route polylines on the drain map. Reuses the existing movement-loop constants; `missionEngine.js` and the robot movement loop are untouched.
 - **Interactive 3D Digital Twin**: An additive, read-only 3D visualization layer (`three.js` + `@react-three/fiber` + `@react-three/drei`) rendered as a new **Digital Twin** page plus a compact live preview on the Dashboard. It aggregates the **existing** REST APIs and consumes the **existing** single Socket.IO connection to show drains, sensors, robots, charging stations and planner routes — with real flood-risk rings, separate AI-decision bars, live sensor water levels, click-to-inspect details (lazy per-drain risk/forecast/maintenance/decision/vision calls) and a non-3D data list fallback. It never writes to the database and never adds a second socket connection or movement loop. Coordinates use a documented visualization grid (not survey-grade GIS). See [docs/digital-twin.md](docs/digital-twin.md).
+- **Autonomous Emergency Response & Incident Intelligence**: A real, auditable incident lifecycle (`OPEN → ACKNOWLEDGED → RESPONDING → RESOLVED`) for high-stakes events. Incidents are created from **real** CRITICAL AI decisions (fire-and-forget hook in the MQTT pipeline), from other real engines, or manually; a CRITICAL incident automatically reuses the **existing** robot path planner (never a duplicate planner) and honestly records `PLANNED`, `MANUAL`, `NO_ROBOT_AVAILABLE` or `NO_COORDINATES`. One active incident per drain (partial unique index), guarded transitions, a timeline built **only** from stored timestamps, dashboard/analytics overlays, live `incidentUpdate` events, an Emergency Response panel, a dedicated Incidents page, and an additive Digital Twin beacon. See [docs/incidents.md](docs/incidents.md).
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -235,6 +236,46 @@ existing prediction endpoints. Highlights:
 📄 Full documentation (architecture, data flows, coordinate contract, events, APIs,
 limitations): [docs/digital-twin.md](docs/digital-twin.md).
 
+## 15g. Autonomous Emergency Response & Incident Intelligence
+The incident layer (`server/services/incidentService.js`) turns the system's real
+high-stakes signals into a trackable emergency workflow instead of a transient toast.
+An incident moves through four states — **OPEN → ACKNOWLEDGED → RESPONDING → RESOLVED**
+— with a severity (LOW/MODERATE/HIGH/CRITICAL) and a source
+(`AI_DECISION`, `FLOOD_RISK`, `FORECAST`, `MAINTENANCE`, `VISION`, `MANUAL`). Highlights:
+
+- **Created from real signals**: the MQTT pipeline raises an incident for a **READY +
+  CRITICAL** AI decision (deduplicated, fire-and-forget — it can never break the sensor
+  loop); `POST /api/incidents` with `source: AI_DECISION` re-reads the real decision from
+  the existing decision engine; operators can also raise a `MANUAL` incident. Severity is
+  never fabricated.
+- **Reuses existing dispatch**: a CRITICAL incident calls the **existing** robot path
+  planner (no duplicate selection logic) and honestly records `PLANNED`, `MANUAL`,
+  `NO_ROBOT_AVAILABLE` or `NO_COORDINATES`. It never dispatches a robot itself —
+  `missionEngine.js` stays the authority and is untouched.
+- **Integrity guarantees**: at most **one active incident per drain** (enforced by a
+  partial unique index plus app-level checks), guarded lifecycle transitions, and a
+  timeline derived **only** from stored timestamps (a missing timestamp is omitted, never
+  invented).
+- **Additive surfaces**: dashboard counts (`active/critical/responding/resolved`) +
+  latest incidents, `/api/analytics/incidents` (by severity/status/source with real
+  response/resolution averages or `null` when there is not enough data), the live
+  `incidentUpdate` Socket.IO event, an **Emergency Response** dashboard panel, a dedicated
+  **Incidents** page with filters and a lifecycle timeline, and an additive incident
+  beacon in the **Digital Twin** (degraded gracefully when the incident API is unavailable).
+
+```mermaid
+flowchart LR
+    AI[CRITICAL AI decision] --> INC[Incident OPEN]
+    MAN[Manual report] --> INC
+    INC -->|acknowledge| ACK[ACKNOWLEDGED]
+    ACK -->|respond| RES[RESPONDING]
+    RES -->|resolve + notes| DONE[RESOLVED]
+    INC -. robot path planner .-> ROUTE[PLANNED / NO_ROBOT_AVAILABLE / NO_COORDINATES]
+```
+
+📄 Full documentation (lifecycle, sources, dispatch reuse, integrity rules, API, events,
+analytics, Digital Twin overlay): [docs/incidents.md](docs/incidents.md).
+
 ## 16. Manual Mission Control
 UI interface (`pages/MissionControl.jsx`) enabling operators to manually select specific drains and dispatch available robots on demand.
 
@@ -255,12 +296,13 @@ Comprehensive list of REST endpoints documented in [docs/api.md](docs/api.md).
 ## 21. Database Tables
 Database tables (`users`, `refresh_tokens`, `settings`, `drains`, `robots`, `sensors`,
 `sensor_readings`, `alerts`, `missions`, `charging_stations`, `reports`,
-`maintenance_predictions`, `drain_vision_inspections`) documented in
+`maintenance_predictions`, `drain_vision_inspections`, `incidents`) documented in
 [docs/database.md](docs/database.md). `sensor_readings` is the minimal flood-risk
 history table (see [docs/flood-risk.md](docs/flood-risk.md)); an idempotent migration
 (`database/migrations/002_sensor_readings.sql`) is applied automatically to existing
 databases by `scripts/dbInit.js` without destroying data. The vision metadata audit
-table is added the same way via `database/migrations/004_drain_vision_inspections.sql`.
+table is added the same way via `database/migrations/004_drain_vision_inspections.sql`,
+and the emergency incidents table via `database/migrations/005_incidents.sql`.
 
 ## 22. Important Socket.IO Events
 - `drainCleaned`: Fired when a robot reaches target drain and completes cleaning.
@@ -276,6 +318,7 @@ table is added the same way via `database/migrations/004_drain_vision_inspection
 - `Vision Inspection` alert type: created when a vision inspection level is HIGH (Medium severity) or CRITICAL (Critical severity), deduplicated per drain, upgrade-only, resolved when a later inspection is LOW/MODERATE.
 - `decisionUpdate`: Emitted when a drain's AI Decision priority level changes (or its score moves ≥ 3 points) with the full decision payload — priority score/level, recommended action, reasons, contributing factors, robot recommendation and data availability (see [docs/decision-engine.md](docs/decision-engine.md)).
 - `robotRouteUpdate`: Emitted when a drain's robot route planning meaningfully changes (selected robot, planning status, route type or target drain) with the full planning payload — selected robot, route type, waypoints, distance/time/battery estimates and selection reasons (see [docs/robot-path-planning.md](docs/robot-path-planning.md)).
+- `incidentUpdate`: Emitted by the incident service on every real incident change with `{ eventType, incident }`. `eventType` is one of `created`, `assigned`, `robotUnavailable`, `acknowledged`, `responded`, `resolved`; `incident` carries the real row (drain, severity, status, source, decision score/level, robot and route status, timestamps). Used by the Emergency Response panel, the Incidents page, the app-level toast, and the Digital Twin beacon (see [docs/incidents.md](docs/incidents.md)).
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -372,7 +415,7 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **237 tests** covering auth, RBAC, drains, robots, missions,
+The suite currently includes **284 tests** covering auth, RBAC, drains, robots, missions,
 alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
 database mapping, AI prediction, socket emission, alert escalation, and broker-failure
 resilience), the flood risk engine (normalization, trend, classification, historical
@@ -388,9 +431,14 @@ REST/analytics endpoints), the robot path planning engine (movement-loop constan
 coordinate distance, time/battery estimation, robot selection scoring, honest
 `NO_ROBOT_AVAILABLE`, direct and charging-stop route planning with waypoint consistency,
 the aggregate summary, the three route REST endpoints, and `robotRouteUpdate` emission),
-and the interactive Digital Twin (clamping, level banding, coordinate conversion,
-entity normalization, route geometry, metrics, every live reducer event, and the
-read-only API shapes it consumes).
+the interactive Digital Twin (clamping, level banding, coordinate conversion,
+entity normalization, route geometry, metrics, every live reducer event including the
+additive incident overlay, and the read-only API shapes it consumes), and the emergency
+incident layer (lifecycle constants, validation, one-active-incident-per-drain dedupe,
+manual + real-decision creation, planner-reuse assignment with honest
+`NO_ROBOT_AVAILABLE` / `NO_COORDINATES` states, guarded transitions, stored-timestamp-only
+timelines, dashboard/analytics overlays, the full `/api/incidents` REST surface with
+authentication, and `incidentUpdate` emission).
 
 ## 32. Project Folder Structure
 ```
@@ -406,11 +454,16 @@ AI-DrainOS/
 │   │   │   ├── DigitalTwin.jsx            # 3D scene (three.js)
 │   │   │   ├── DigitalTwinPage.jsx        # full Digital Twin page
 │   │   │   ├── DigitalTwinPreview.jsx     # compact dashboard preview
-│   │   │   └── DigitalTwinLegend.jsx      # shared palette legend
+│   │   │   ├── DigitalTwinLegend.jsx      # shared palette legend
+│   │   │   ├── EmergencyResponsePanel.jsx # dashboard incident panel
+│   │   │   ├── IncidentsPage.jsx          # full incident management page
+│   │   │   └── IncidentTimeline.jsx       # lifecycle timeline
 │   │   ├── pages/
 │   │   ├── services/
 │   │   │   ├── digitalTwinService.js      # REST aggregation (read-only)
-│   │   │   └── digitalTwinUtils.mjs       # pure shared logic + reducer
+│   │   │   ├── digitalTwinUtils.mjs       # pure shared logic + reducer
+│   │   │   └── incidentService.js         # incidents REST client
+│   │   ├── styles/incidents.css
 │   │   ├── styles/digitaltwin.css
 │   │   └── App.jsx
 │   └── vite.config.js
@@ -429,6 +482,7 @@ AI-DrainOS/
 │   └── migrations/002_sensor_readings.sql
 │   └── migrations/003_maintenance_predictions.sql
 │   └── migrations/004_drain_vision_inspections.sql
+│   └── migrations/005_incidents.sql
 ├── docs/                    # Architectural & API Documentation
 │   ├── architecture.md
 │   ├── api.md
@@ -439,7 +493,8 @@ AI-DrainOS/
 │   ├── forecasting.md
 │   ├── vision-inspection.md
 │   ├── robot-path-planning.md
-│   └── digital-twin.md
+│   ├── digital-twin.md
+│   └── incidents.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example

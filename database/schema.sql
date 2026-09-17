@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS maintenance_predictions CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS settings CASCADE;
 DROP TABLE IF EXISTS reports CASCADE;
+DROP TABLE IF EXISTS incidents CASCADE;
 DROP TABLE IF EXISTS missions CASCADE;
 DROP TABLE IF EXISTS alerts CASCADE;
 DROP TABLE IF EXISTS sensors CASCADE;
@@ -186,6 +187,58 @@ CREATE TABLE alerts (
   alert_status VARCHAR(20) DEFAULT 'Open',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============================================================
+-- INCIDENTS (Autonomous Emergency Response & Incident Intelligence)
+--
+-- A critical AI decision (or a manual/flood/forecast/maintenance/
+-- vision trigger) becomes a trackable incident with a complete,
+-- timestamped response lifecycle:
+--
+--   OPEN -> ACKNOWLEDGED -> RESPONDING -> RESOLVED
+--
+-- Only REAL database timestamps are stored. route_status is honest:
+-- PLANNED / NO_ROBOT_AVAILABLE / NO_COORDINATES / MANUAL / NULL
+-- when unassigned. Mirrored by database/migrations/005_incidents.sql
+-- for existing databases.
+-- ============================================================
+
+CREATE TABLE incidents (
+  id SERIAL PRIMARY KEY,
+  drain_id INTEGER NOT NULL REFERENCES drains(id) ON DELETE CASCADE,
+  severity VARCHAR(20) NOT NULL DEFAULT 'HIGH'
+    CHECK (severity IN ('LOW', 'MODERATE', 'HIGH', 'CRITICAL')),
+  title TEXT,
+  description TEXT,
+  source VARCHAR(30) NOT NULL DEFAULT 'AI_DECISION'
+    CHECK (source IN ('AI_DECISION', 'FLOOD_RISK', 'FORECAST', 'MAINTENANCE', 'VISION', 'MANUAL')),
+  decision_score INTEGER
+    CHECK (decision_score IS NULL OR (decision_score >= 0 AND decision_score <= 100)),
+  decision_level VARCHAR(20),
+  assigned_robot_id INTEGER REFERENCES robots(id) ON DELETE SET NULL,
+  route_status VARCHAR(30),
+  route JSONB,
+  status VARCHAR(20) NOT NULL DEFAULT 'OPEN'
+    CHECK (status IN ('OPEN', 'ACKNOWLEDGED', 'RESPONDING', 'RESOLVED')),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  acknowledged_at TIMESTAMP,
+  responding_at TIMESTAMP,
+  resolved_at TIMESTAMP
+    CHECK (resolved_at IS NULL OR status = 'RESOLVED'),
+  assigned_at TIMESTAMP,
+  route_status_changed_at TIMESTAMP,
+  resolution_notes TEXT
+);
+
+CREATE INDEX idx_incidents_drain_id ON incidents(drain_id);
+CREATE INDEX idx_incidents_status ON incidents(status);
+CREATE INDEX idx_incidents_severity ON incidents(severity);
+CREATE INDEX idx_incidents_source ON incidents(source);
+CREATE INDEX idx_incidents_created_at ON incidents(created_at);
+
+CREATE UNIQUE INDEX idx_incidents_one_active_per_drain
+  ON incidents(drain_id)
+  WHERE status IN ('OPEN', 'ACKNOWLEDGED', 'RESPONDING');
 
 -- ============================================================
 -- MISSIONS

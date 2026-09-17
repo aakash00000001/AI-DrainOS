@@ -10,7 +10,8 @@ import {
   FaCog,
   FaUsers,
   FaSignOutAlt,
-  FaListOl
+  FaListOl,
+  FaAmbulance
 } from "react-icons/fa";
 
 import "../../styles/sidebar.css";
@@ -81,6 +82,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
           >
             <FaBell />
             <span>Alerts</span>
+          </li>
+
+          {/* Emergency / Incidents (Update #18) */}
+          <li
+            className={activePage === "incidents" ? "active" : ""}
+            onClick={() => onNavigate("incidents")}
+          >
+            <FaAmbulance />
+            <span>Emergency / Incidents</span>
           </li>
 
           {/* AI Prediction */}

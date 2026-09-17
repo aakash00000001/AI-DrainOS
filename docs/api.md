@@ -10,6 +10,12 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 > (`/api/predictions/risk|forecast|maintenance|decision|vision/:drainId`).
 > See [digital-twin.md](digital-twin.md) for the aggregation model and the
 > visualization-coordinate caveat.
+>
+> **Emergency incidents (additive).** Update #18 adds a `/api/incidents`
+> surface plus additive incident fields on `/api/dashboard` and
+> `/api/analytics`. Existing response fields are unchanged. The Digital Twin
+> additionally consumes `GET /api/incidents/active`. See
+> [incidents.md](incidents.md).
 
 ---
 
@@ -244,6 +250,80 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 
 ---
 
+## Incidents API (`/api/incidents`)
+
+An auditable emergency lifecycle: `OPEN → ACKNOWLEDGED → RESPONDING → RESOLVED`.
+GET routes are Public; POST/PUT require `Bearer <token>`. Severity is one of
+`LOW | MODERATE | HIGH | CRITICAL`; source is one of
+`AI_DECISION | FLOOD_RISK | FORECAST | MAINTENANCE | VISION | MANUAL`.
+See [incidents.md](incidents.md).
+
+### `GET /api/incidents`
+- **Access**: Public / Authenticated
+- **Query Params**: `?status=OPEN&severity=CRITICAL&drain_id=5` (all optional)
+- **Response** (200 OK): Array of incident objects. Each row carries `id`, `drain_id`,
+  `severity`, `title`, `description`, `source`, `decision_score`, `decision_level`,
+  `assigned_robot_id`, `route_status`, `status`, all lifecycle timestamps,
+  `resolution_notes`, and nested `drain` (zone/location) and `robot` (robotName).
+
+### `GET /api/incidents/active`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Only incidents in `OPEN`, `ACKNOWLEDGED` or `RESPONDING`.
+
+### `GET /api/incidents/:id`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Single incident object.
+- **Response** (404): `{ "error": "Incident not found" }`
+
+### `GET /api/incidents/:id/timeline`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Lifecycle events derived **only** from stored timestamps
+  (`incident created`, `robot assigned`, `route status`, `acknowledged`,
+  `response started`, `resolved`). Missing timestamps are omitted, never fabricated.
+- **Response** (404): `{ "error": "Incident not found" }`
+
+### `POST /api/incidents`
+- **Access**: Authenticated
+- **Request Body**:
+  ```json
+  {
+    "drain_id": 5,
+    "severity": "CRITICAL",
+    "source": "MANUAL",
+    "title": "Sinkhole reported",
+    "description": "Optional context"
+  }
+  ```
+- **Response** (201 Created): The created incident (for a CRITICAL incident an automatic robot plan may set `route_status` to `PLANNED`, `NO_ROBOT_AVAILABLE` or `NO_COORDINATES`).
+- **Response** (400): `{ "error": "Invalid drain id" }` | `"Invalid severity"` | `"Invalid source"`.
+- **Response** (404): `{ "error": "Drain not found" }`.
+- **Response** (409): duplicate active incident (`DUPLICATE_ACTIVE_INCIDENT`), or — for `source: "AI_DECISION"` — `NOT_CRITICAL` / `NO_VALID_DECISION` (the real decision engine result is authoritative; severity is never fabricated).
+
+### `PUT /api/incidents/:id/acknowledge`
+- **Access**: Authenticated
+- **Response** (200 OK): Updated incident (`status: "ACKNOWLEDGED"`).
+- **Response** (409): invalid transition (e.g. already resolved).
+
+### `PUT /api/incidents/:id/respond`
+- **Access**: Authenticated
+- **Response** (200 OK): Updated incident (`status: "RESPONDING"`).
+- **Response** (409): invalid transition.
+
+### `PUT /api/incidents/:id/resolve`
+- **Access**: Authenticated
+- **Request Body**: `{ "resolution_notes": "Cleared and inspected" }` (optional)
+- **Response** (200 OK): Updated incident (`status: "RESOLVED"`).
+- **Response** (409): already resolved.
+
+### Socket event
+Every real change emits `incidentUpdate` through the existing shared hub:
+```json
+{ "eventType": "created", "incident": { "id": 12, "severity": "CRITICAL", "status": "OPEN" } }
+```
+`eventType` ∈ `created | assigned | robotUnavailable | acknowledged | responded | resolved`.
+
+---
+
 ## Alerts, Settings & Dashboard
 
 ### `GET /api/alerts`
@@ -263,7 +343,8 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 
 ### `GET /api/dashboard`
 - **Access**: Public / Authenticated
-- **Response** (200 OK): `{ "totalDrains": 7, "activeRobots": 1, "criticalAlerts": 2 }`
+- **Response** (200 OK): `{ "totalDrains": 7, "activeRobots": 1, "criticalAlerts": 2, "incidents": { "counts": { "active": 1, "critical": 1, "responding": 0, "resolved": 2, "open": 1, "acknowledged": 0, "total": 3 }, "latest": [ ...incidents ] } }`
+  - `incidents` is **additive** (Update #18) and best-effort: existing fields are unchanged.
 
 ### `GET /api/dashboard/risk`
 - **Access**: Public / Authenticated
@@ -308,7 +389,7 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
   - `total_cleanings` / `robot_operations` / `total_missions`: mission records.
   - `blockages_detected`: open Critical alerts.
   - `flood_predictions`: sensor readings count.
-  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), and `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)).
+  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)).
 
 ### `GET /api/analytics/monthly`
 - **Access**: Public / Authenticated
@@ -343,3 +424,7 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 ### `GET /api/analytics/robot-routes`
 - **Access**: Public / Authenticated
 - **Response** (200 OK): Robot path planning analytics in snake_case: `total_drains`, `warning_critical_drains`, `planned_routes`, `routes_by_type` (+ `routes_by_type_list`), `robots_selected`, `average_travel_seconds`, `average_distance`, `average_battery_cost`, `direct_routes`, `charging_stop_routes`, `disclaimer`, `generated_at`. See [robot-path-planning.md](robot-path-planning.md).
+
+### `GET /api/analytics/incidents`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Incident analytics: `total`, `by_severity`, `by_status`, `by_source`, `average_response_seconds` / `average_response_minutes`, `average_resolution_seconds` / `average_resolution_minutes`, and a `data_points` count. Averages are computed only from **real** stored timestamps and are `null` when there is not enough data. See [incidents.md](incidents.md).

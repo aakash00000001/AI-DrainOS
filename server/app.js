@@ -28,6 +28,7 @@ app.use("/api/weather", require("./routes/weather"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/dashboard", require("./routes/dashboard"));
 app.use("/api/missions", require("./routes/missions"));
+app.use("/api/incidents", require("./routes/incidents"));
 app.use("/api/charging-stations", require("./routes/chargingStations"));
 app.use("/api/settings", require("./routes/settings"));
 

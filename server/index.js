@@ -8,6 +8,7 @@ const app = require("./app");
 const { assignMission } = require("./services/missionEngine");
 const { startMqttService } = require("./services/mqttService");
 const socketHub = require("./services/socketHub");
+const incidentService = require("./services/incidentService");
 
 require("dotenv").config();
 
@@ -546,6 +547,18 @@ setInterval(async () => {
       `
     );
 
+    // Additive emergency/incident counts on the shared dashboard
+    // event. Best-effort: the live loop must never break if the
+    // incidents table is unavailable.
+    let incidentCounts = null;
+
+    try {
+      const incidentSummary = await incidentService.getDashboardSummary();
+      incidentCounts = incidentSummary.counts;
+    } catch (incidentErr) {
+      console.log("⚠️ dashboardUpdate incident counts skipped:", incidentErr.message);
+    }
+
     io.emit("dashboardUpdate", {
       totalDrains: Number(
         totalDrains.rows[0].count
@@ -558,6 +571,8 @@ setInterval(async () => {
       criticalAlerts: Number(
         criticalAlerts.rows[0].count
       ),
+
+      ...(incidentCounts ? { incidents: { counts: incidentCounts } } : {})
     });
 
   } catch (err) {

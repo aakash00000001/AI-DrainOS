@@ -52,6 +52,8 @@ const INITIAL_STATE = {
   metrics: null,
   loadError: [],
   decisionsByDrain: {},
+  incidents: [],
+  activeIncidentByDrain: {},
   byDrain: {},
   bySensor: {}
 };
@@ -118,6 +120,21 @@ function DrainDetails({ drain, details }) {
           value={drain.waterLevel != null ? `${drain.waterLevel}%` : null}
         />
       </div>
+
+      {drain.incident && (
+        <div className="dt-details-grid">
+          <div className="dt-field">
+            <span className="dt-field-label">Emergency incident</span>
+            <span
+              className="dt-field-value"
+              style={{ color: "#dc2626", fontWeight: 600 }}
+            >
+              #{drain.incident.id} · {drain.incident.severity} · {drain.incident.status}
+              {drain.incident.routeStatus ? ` · ${drain.incident.routeStatus}` : ""}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="dt-details-grid">
         <div className="dt-field">
@@ -467,7 +484,9 @@ function DigitalTwinPage({ initialView = "overview" }) {
           missions: [],
           origin: null,
           metrics: null,
-          loadError: ["Failed to load digital twin data"]
+          loadError: ["Failed to load digital twin data"],
+          incidents: [],
+          activeIncidentByDrain: {}
         });
       })
       .finally(() => {
@@ -505,6 +524,9 @@ function DigitalTwinPage({ initialView = "overview" }) {
     const onDashboard = (payload) => {
       dispatch({ type: "DASHBOARD_UPDATE", payload });
     };
+    const onIncident = (payload) => {
+      if (payload && payload.incident) dispatch({ type: "INCIDENT_UPDATE", payload });
+    };
 
     socket.on("sensorUpdate", onSensor);
     socket.on("floodRiskUpdate", onRisk);
@@ -514,6 +536,7 @@ function DigitalTwinPage({ initialView = "overview" }) {
     socket.on("decisionUpdate", onDecision);
     socket.on("robotRouteUpdate", onRoute);
     socket.on("dashboardUpdate", onDashboard);
+    socket.on("incidentUpdate", onIncident);
 
     return () => {
       socket.off("sensorUpdate", onSensor);
@@ -524,12 +547,19 @@ function DigitalTwinPage({ initialView = "overview" }) {
       socket.off("decisionUpdate", onDecision);
       socket.off("robotRouteUpdate", onRoute);
       socket.off("dashboardUpdate", onDashboard);
+      socket.off("incidentUpdate", onIncident);
     };
   }, []);
 
   const fusedDrains = useMemo(
-    () => fuseDrains(state.drains, state.byDrain, state.decisionsByDrain || {}),
-    [state.drains, state.byDrain, state.decisionsByDrain]
+    () =>
+      fuseDrains(
+        state.drains,
+        state.byDrain,
+        state.decisionsByDrain || {},
+        state.activeIncidentByDrain || {}
+      ),
+    [state.drains, state.byDrain, state.decisionsByDrain, state.activeIncidentByDrain]
   );
 
   const handleSelect = (type, id) => {

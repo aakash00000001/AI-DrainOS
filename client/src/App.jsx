@@ -15,6 +15,8 @@ import MaintenancePanel from "./components/MaintenancePanel";
 import DrainVisionInspection from "./components/DrainVisionInspection";
 import AIDecisionPanel from "./components/AIDecisionPanel";
 import RobotRoutePlanner from "./components/RobotRoutePlanner";
+import EmergencyResponsePanel from "./components/EmergencyResponsePanel";
+import IncidentsPage from "./components/IncidentsPage";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -109,6 +111,31 @@ function App() {
 
     });
 
+    socket.on("incidentUpdate", (payload) => {
+
+      if (!payload || !payload.incident) return;
+
+      const incident = payload.incident;
+      const where = incident.drain ? incident.drain.zone : `Drain #${incident.drain_id}`;
+
+      if (payload.eventType === "created") {
+        const warn =
+          incident.severity === "CRITICAL" ? toast.error : toast.warning;
+        warn(`🚑 Incident #${incident.id} [${incident.severity}] opened at ${where}`);
+      } else if (payload.eventType === "robotUnavailable") {
+        toast.warning(
+          `⚠️ Incident #${incident.id} at ${where}: ${incident.route_status}`
+        );
+      } else if (payload.eventType === "assigned") {
+        toast.info(
+          `🤖 Incident #${incident.id}: robot assigned (${incident.route_status})`
+        );
+      } else {
+        toast.info(`🚑 Incident #${incident.id} → ${incident.status} (${where})`);
+      }
+
+    });
+
     socket.on("dashboardUpdate", (data) => {
 
       setDashboard(data);
@@ -125,6 +152,7 @@ function App() {
       socket.off("dashboardUpdate");
       socket.off("visionInspectionUpdate");
       socket.off("decisionUpdate");
+      socket.off("incidentUpdate");
 
     };
 
@@ -250,6 +278,10 @@ function App() {
 
           <RobotRoutePlanner />
 
+          <EmergencyResponsePanel
+            onOpen={() => handleNavigate("incidents")}
+          />
+
           <DigitalTwinPreview
             onOpen={() => handleNavigate("digitaltwin")}
           />
@@ -314,6 +346,24 @@ function App() {
           <h2>🧊 Digital Twin (3D)</h2>
 
           <DigitalTwinPage />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Emergency / Incidents (Update #18)
+    if (activePage === "incidents") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>🚑 Emergency Response & Incidents</h2>
+
+          <IncidentsPage />
 
         </div>
 

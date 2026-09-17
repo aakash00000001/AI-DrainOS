@@ -11,6 +11,7 @@
 //   GET /api/charging-stations
 //   GET /api/dashboard/robot-routes
 //   GET /api/dashboard/decisions
+//   GET /api/incidents/active          (additive, Update #18)
 //   GET /api/predictions/risk/:id      (on-demand, drain detail)
 //   GET /api/predictions/forecast/:id  (on-demand)
 //   GET /api/predictions/maintenance/:id (on-demand)
@@ -32,7 +33,9 @@ import {
   normalizeRoute,
   normalizeSensor,
   matchSensorsToDrains,
-  buildMetrics
+  buildMetrics,
+  normalizeIncidentSignal,
+  buildActiveIncidentByDrain
 } from "./digitalTwinUtils.mjs";
 
 function coordinatePoints(drains, robots, stations) {
@@ -51,14 +54,15 @@ function coordinatePoints(drains, robots, stations) {
  * origin is derived from the loaded project coordinates.
  */
 export async function loadDigitalTwinData() {
-  const [drainsRes, sensorsRes, robotsRes, stationsRes, routesRes, decisionsRes] =
+  const [drainsRes, sensorsRes, robotsRes, stationsRes, routesRes, decisionsRes, incidentsRes] =
     await Promise.allSettled([
       axios.get(`${API_URL}/drains`),
       axios.get(`${API_URL}/sensors`),
       axios.get(`${API_URL}/robots`),
       axios.get(`${API_URL}/charging-stations`),
       axios.get(`${API_URL}/dashboard/robot-routes`),
-      axios.get(`${API_URL}/dashboard/decisions`)
+      axios.get(`${API_URL}/dashboard/decisions`),
+      axios.get(`${API_URL}/incidents/active`)
     ]);
 
   const rawDrains = drainsRes.status === "fulfilled" ? asArray(drainsRes.value.data) : [];
@@ -151,15 +155,29 @@ export async function loadDigitalTwinData() {
     }
   }
 
+  // Active incidents (Update #18) — additive overlay. When the
+  // incident API is unavailable this degrades to an empty list and
+  // the scene stays fully usable in a "degraded" state.
+  const rawIncidents =
+    incidentsRes.status === "fulfilled" ? asArray(incidentsRes.value.data) : [];
+
+  const incidents = rawIncidents
+    .map((incident) => normalizeIncidentSignal(incident))
+    .filter((incident) => incident !== null);
+
+  const activeIncidentByDrain = buildActiveIncidentByDrain(incidents);
+
   const metrics = buildMetrics(drains, robots, routes, {
     decisionsTotal: topPriority.length,
+    activeIncidents: Object.keys(activeIncidentByDrain).length,
     dataSources: {
       drains: drainsRes.status === "fulfilled",
       sensors: sensorsRes.status === "fulfilled",
       robots: robotsRes.status === "fulfilled",
       chargingStations: stationsRes.status === "fulfilled",
       routes: routesRes.status === "fulfilled",
-      decisions: decisionsRes.status === "fulfilled"
+      decisions: decisionsRes.status === "fulfilled",
+      incidents: incidentsRes.status === "fulfilled"
     }
   });
 
@@ -169,7 +187,8 @@ export async function loadDigitalTwinData() {
     robotsRes.status !== "fulfilled" && "robots",
     stationsRes.status !== "fulfilled" && "stations",
     routesRes.status !== "fulfilled" && "routes",
-    decisionsRes.status !== "fulfilled" && "decisions"
+    decisionsRes.status !== "fulfilled" && "decisions",
+    incidentsRes.status !== "fulfilled" && "incidents"
   ].filter(Boolean);
 
   return {
@@ -180,6 +199,8 @@ export async function loadDigitalTwinData() {
     routes,
     missions: [],
     decisionsByDrain,
+    incidents,
+    activeIncidentByDrain,
     origin,
     metrics,
     loadError

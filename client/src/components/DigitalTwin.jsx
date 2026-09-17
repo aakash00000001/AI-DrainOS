@@ -31,7 +31,8 @@ import {
   normalizeLevel,
   safeWaterLevel,
   waterLevelToHeight,
-  fuseDrains
+  fuseDrains,
+  buildActiveIncidentByDrain
 } from "../services/digitalTwinUtils.mjs";
 
 import "../styles/digitaltwin.css";
@@ -103,6 +104,7 @@ const DrainView = memo(function DrainView({
   riskScore,
   decisionLevel,
   decisionScore,
+  incident,
   selected,
   compact,
   onSelect
@@ -118,6 +120,7 @@ const DrainView = memo(function DrainView({
   const decisionColor = LEVEL_COLOR[decisionVisual] || "#64748b";
   const decisionBarHeight = (decisionScore != null ? Math.max(0, Math.min(100, decisionScore)) : 0) / 100 * 1.3;
   const riskBarHeight = (riskScore != null ? Math.max(0, Math.min(100, riskScore)) : 0) / 100 * 1.3;
+  const incidentColor = incident ? LEVEL_COLOR[incident.severity] || "#ef4444" : null;
 
   return (
     <group
@@ -198,6 +201,33 @@ const DrainView = memo(function DrainView({
         </mesh>
       )}
 
+      {/* emergency incident beacon (Update #18, additive) */}
+      {incident && (
+        <>
+          <mesh position={[0, 1.35, 0]}>
+            <sphereGeometry args={[0.3, 18, 18]} />
+            <meshStandardMaterial
+              color={incidentColor}
+              emissive={incidentColor}
+              emissiveIntensity={1}
+            />
+          </mesh>
+          <mesh position={[0, 1.35, 0]}>
+            <sphereGeometry args={[0.6, 18, 18]} />
+            <meshBasicMaterial color={incidentColor} transparent opacity={0.18} />
+          </mesh>
+          <mesh position={[0, 0.09, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[2.35, 2.6, 48]} />
+            <meshBasicMaterial
+              color={incidentColor}
+              transparent
+              opacity={0.85}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </>
+      )}
+
       {/* selection highlight ring */}
       {selected && (
         <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -213,6 +243,11 @@ const DrainView = memo(function DrainView({
             <div style={{ color: "#94a3b8", fontWeight: 400 }}>
               {water === null ? "Data unavailable" : `water ${water}%`}
             </div>
+            {incident && (
+              <div style={{ color: incidentColor, fontWeight: 600 }}>
+                🚑 {incident.severity} · {incident.status}
+              </div>
+            )}
           </div>
         </Html>
       )}
@@ -624,7 +659,8 @@ function DigitalTwin({
   const isCritical = (d) =>
     d.status === "Critical" ||
     d.riskLevel === "CRITICAL" ||
-    d.decisionLevel === "CRITICAL";
+    d.decisionLevel === "CRITICAL" ||
+    Boolean(d.incident);
   const isCriticalByDrainId = (id, drainsList) => {
     const target = drainsList.find((d) => Number(d.id) === Number(id));
     return target ? isCritical(target) : true;
@@ -636,10 +672,19 @@ function DigitalTwin({
   const routes = data && data.routes ? data.routes : EMPTY_ARRAY;
   const decisions =
     data && data.decisionsByDrain ? data.decisionsByDrain : EMPTY_OBJECT;
+  const activeIncidentByDrain =
+    data && data.activeIncidentByDrain ? data.activeIncidentByDrain : null;
+  const incidentList = data && data.incidents ? data.incidents : null;
+  const incidentsByDrain = useMemo(
+    () =>
+      activeIncidentByDrain ||
+      (incidentList ? buildActiveIncidentByDrain(incidentList) : EMPTY_OBJECT),
+    [activeIncidentByDrain, incidentList]
+  );
 
   const fusedDrains = useMemo(
-    () => fuseDrains(drains, live.byDrain, decisions),
-    [drains, live.byDrain, decisions]
+    () => fuseDrains(drains, live.byDrain, decisions, incidentsByDrain),
+    [drains, live.byDrain, decisions, incidentsByDrain]
   );
 
   // Filtered object sets for the active focus mode + search term.
@@ -728,6 +773,7 @@ function DigitalTwin({
               riskScore={drain.riskScore}
               decisionLevel={drain.decisionLevel}
               decisionScore={drain.decisionScore}
+              incident={drain.incident}
               selected={selected && selected.type === "drain" && Number(selected.id) === Number(drain.id)}
               compact={compact}
               onSelect={onSelect}

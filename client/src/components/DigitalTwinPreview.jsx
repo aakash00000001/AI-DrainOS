@@ -30,6 +30,8 @@ const INITIAL_STATE = {
   metrics: null,
   loadError: [],
   decisionsByDrain: {},
+  incidents: [],
+  activeIncidentByDrain: {},
   byDrain: {},
   bySensor: {}
 };
@@ -77,6 +79,9 @@ function DigitalTwinPreview({ onOpen }) {
       dispatch({ type, payload });
     };
     const onDashboard = (payload) => dispatch({ type: "DASHBOARD_UPDATE", payload });
+    const onIncident = (payload) => {
+      if (payload && payload.incident) dispatch({ type: "INCIDENT_UPDATE", payload });
+    };
 
     socket.on("sensorUpdate", forward("SENSOR_UPDATE"));
     socket.on("floodRiskUpdate", forward("RISK_UPDATE"));
@@ -86,6 +91,7 @@ function DigitalTwinPreview({ onOpen }) {
     socket.on("decisionUpdate", forward("DECISION_UPDATE"));
     socket.on("robotRouteUpdate", forward("ROUTE_UPDATE"));
     socket.on("dashboardUpdate", onDashboard);
+    socket.on("incidentUpdate", onIncident);
 
     return () => {
       socket.off("sensorUpdate");
@@ -96,12 +102,19 @@ function DigitalTwinPreview({ onOpen }) {
       socket.off("decisionUpdate");
       socket.off("robotRouteUpdate");
       socket.off("dashboardUpdate");
+      socket.off("incidentUpdate");
     };
   }, []);
 
   const fusedDrains = useMemo(
-    () => fuseDrains(state.drains, state.byDrain, state.decisionsByDrain || {}),
-    [state.drains, state.byDrain, state.decisionsByDrain]
+    () =>
+      fuseDrains(
+        state.drains,
+        state.byDrain,
+        state.decisionsByDrain || {},
+        state.activeIncidentByDrain || {}
+      ),
+    [state.drains, state.byDrain, state.decisionsByDrain, state.activeIncidentByDrain]
   );
 
   const live = useMemo(

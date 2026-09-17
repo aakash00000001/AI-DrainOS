@@ -1,0 +1,491 @@
+/* ------------------------------------------------------------
+   Incidents — Emergency Response & Incident Intelligence
+   Update #18
+------------------------------------------------------------ */
+
+.incident-shell,
+.incident-page {
+  width: 100%;
+}
+
+.incident-shell-header,
+.incident-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.incident-shell-header h2,
+.incident-page-header h2 {
+  margin: 0;
+}
+
+.incident-subtitle {
+  color: #64748b;
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.incident-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Stat strip */
+.incident-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.incident-stat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  border-left: 4px solid #cbd5e1;
+}
+
+.incident-stat svg {
+  color: #64748b;
+  font-size: 20px;
+}
+
+.incident-stat strong {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.incident-stat span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.incident-stat.stat-danger {
+  border-left-color: #fa8c16;
+}
+.incident-stat.stat-critical {
+  border-left-color: #ff4d4f;
+}
+.incident-stat.stat-active {
+  border-left-color: #1677ff;
+}
+.incident-stat.stat-warn {
+  border-left-color: #faad14;
+}
+
+.incident-stat.stat-danger svg,
+.incident-stat.stat-danger strong {
+  color: #fa8c16;
+}
+.incident-stat.stat-critical svg,
+.incident-stat.stat-critical strong {
+  color: #ff4d4f;
+}
+.incident-stat.stat-active svg,
+.incident-stat.stat-active strong {
+  color: #1677ff;
+}
+.incident-stat.stat-warn svg,
+.incident-stat.stat-warn strong {
+  color: #d48806;
+}
+
+/* Create form */
+.incident-create h3 {
+  margin-top: 0;
+}
+
+.incident-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #52c41a;
+  background: #f6ffed;
+  border: 1px dashed #b7eb8f;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin: 8px 0;
+}
+
+/* List items */
+.incident-item {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.07);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+  border-left: 4px solid #d9d9d9;
+}
+
+.incident-item-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.incident-item h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.incident-location {
+  margin: 0 0 6px;
+  color: #334155;
+  font-size: 13px;
+}
+
+.incident-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  color: #64748b;
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+
+.incident-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.incident-id {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Severity badges */
+.incident-severity {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #fff;
+}
+
+.sev-critical {
+  background: #ff4d4f;
+}
+.sev-high {
+  background: #fa8c16;
+}
+.sev-moderate {
+  background: #faad14;
+  color: #422800;
+}
+.sev-low {
+  background: #52c41a;
+}
+
+/* Status badges */
+.incident-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.st-open {
+  background: #fff1f0;
+  color: #cf1322;
+  border: 1px solid #ffa39e;
+}
+.st-acknowledged {
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1px solid #ffd591;
+}
+.st-responding {
+  background: #e6f7ff;
+  color: #0958d9;
+  border: 1px solid #91caff;
+}
+.st-resolved {
+  background: #f6ffed;
+  color: #389e0d;
+  border: 1px solid #b7eb8f;
+}
+
+/* Route pills */
+.route-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.route-planned {
+  background: #f0f5ff;
+  color: #003eb3;
+}
+.route-manual {
+  background: #f5f5f5;
+  color: #595959;
+}
+.route-no_robot_available {
+  background: #fff1f0;
+  color: #a8071a;
+}
+.route-no_coordinates {
+  background: #fff1e6;
+  color: #ad4e00;
+}
+
+/* Filter bar */
+.incident-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+  margin-bottom: 18px;
+}
+
+.incident-filter-bar .form-group {
+  margin-bottom: 0;
+}
+.incident-filter-bar .form-group label {
+  font-size: 11px;
+}
+
+/* Layout */
+.incident-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+@media (min-width: 1080px) {
+  .incident-layout.has-detail {
+    grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+  }
+}
+
+.incident-list-card {
+  margin-bottom: 0;
+}
+
+.incident-table-scroll {
+  overflow-x: auto;
+}
+
+.incident-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.incident-table th {
+  text-align: left;
+  padding: 12px 10px;
+  border-bottom: 2px solid #eef2f7;
+  color: #64748b;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.incident-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.incident-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.incident-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.incident-table tbody tr.row-selected {
+  background: #eff6ff;
+}
+
+.cell-sub {
+  display: block;
+  color: #94a3b8;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.incident-no-rows {
+  color: #94a3b8;
+  text-align: center;
+  padding: 28px !important;
+}
+
+.row-action .btn {
+  white-space: nowrap;
+}
+
+/* Detail panel */
+.incident-detail {
+  margin-bottom: 0;
+  align-self: start;
+}
+
+.incident-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.incident-detail-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+.incident-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 6px 16px;
+  margin: 14px 0;
+}
+
+.incident-detail-grid p {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.incident-detail-grid strong {
+  display: block;
+  color: #94a3b8;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.detail-wide {
+  grid-column: 1 / -1;
+}
+
+.incident-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 10px 0 18px;
+}
+
+.resolve-notes {
+  width: 100%;
+  min-height: 70px;
+}
+
+.timeline-title {
+  margin: 0 0 12px;
+}
+
+/* Timeline */
+.incident-timeline {
+  position: relative;
+  padding-left: 22px;
+}
+
+.incident-timeline::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: #e2e8f0;
+}
+
+.timeline-item {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: -22px;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #bfdbfe;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #93c5fd;
+}
+
+.timeline-item.timeline-created .timeline-dot {
+  background: #ff4d4f;
+  box-shadow: 0 0 0 2px #ffa39e;
+}
+.timeline-item.timeline-robot .timeline-dot,
+.timeline-item.timeline-route .timeline-dot {
+  background: #1677ff;
+  box-shadow: 0 0 0 2px #91caff;
+}
+.timeline-item.timeline-ack .timeline-dot {
+  background: #faad14;
+  box-shadow: 0 0 0 2px #ffe58f;
+}
+.timeline-item.timeline-respond .timeline-dot {
+  background: #722ed1;
+  box-shadow: 0 0 0 2px #d3adf7;
+}
+.timeline-item.timeline-resolved .timeline-dot {
+  background: #52c41a;
+  box-shadow: 0 0 0 2px #b7eb8f;
+}
+
+.timeline-event {
+  font-weight: 600;
+  font-size: 13px;
+  color: #334155;
+  margin: 0;
+  text-transform: capitalize;
+}
+
+.timeline-meta,
+.timeline-time {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.timeline-notes {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6b4f00;
+  background: #fffbe6;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.timeline-empty {
+  color: #94a3b8;
+  font-size: 13px;
+}

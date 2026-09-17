@@ -327,10 +327,11 @@ export function normalizeRoute(raw, origin) {
 // stays a pure function of a single object graph.
 // ------------------------------------------------------------
 
-export function fuseDrains(drains, liveByDrain, decisionsByDrain) {
+export function fuseDrains(drains, liveByDrain, decisionsByDrain, incidentsByDrain = {}) {
   return drains.map((drain) => {
     const live = liveByDrain[drain.id] || {};
     const decision = decisionsByDrain[drain.id] || {};
+    const incident = incidentsByDrain[drain.id] || null;
 
     const riskLevel =
       normalizeLevel(live.riskLevel) ||
@@ -368,9 +369,81 @@ export function fuseDrains(drains, liveByDrain, decisionsByDrain) {
       maintenanceLevel: normalizeLevel(live.maintenanceLevel),
       maintenanceScore: safeNumber(live.maintenanceScore, null),
       visionLevel: normalizeLevel(live.visionLevel),
-      visionScore: safeNumber(live.visionScore, null)
+      visionScore: safeNumber(live.visionScore, null),
+      incident
     };
   });
+}
+
+// ------------------------------------------------------------
+// Incidents (Update #18) — additive emergency-signal normalization
+// ------------------------------------------------------------
+
+export const ACTIVE_INCIDENT_STATUSES = ["OPEN", "ACKNOWLEDGED", "RESPONDING"];
+
+export function isActiveIncident(incident) {
+  return (
+    Boolean(incident) &&
+    ACTIVE_INCIDENT_STATUSES.includes(String(incident.status || "").toUpperCase())
+  );
+}
+
+/**
+ * Normalize a /api/incidents row (or incidentUpdate payload.incident)
+ * into the small signal the twin needs. Returns null when there is
+ * no usable id/drain reference (never invents one).
+ */
+export function normalizeIncidentSignal(raw) {
+  if (!raw) return null;
+
+  const drainId =
+    raw.drain_id !== undefined && raw.drain_id !== null
+      ? raw.drain_id
+      : raw.drain
+        ? raw.drain.id
+        : raw.drainId !== undefined
+          ? raw.drainId
+          : null;
+
+  const id = Number(raw.id);
+  if (!Number.isFinite(id) || drainId === null || drainId === undefined) return null;
+
+  return {
+    id,
+    drainId: Number(drainId),
+    zone: raw.drain
+      ? raw.drain.zone || raw.drain.zone_name || null
+      : raw.zone || null,
+    location: raw.drain ? raw.drain.location || null : raw.location || null,
+    severity: normalizeLevel(raw.severity) || String(raw.severity || "LOW").toUpperCase(),
+    status: String(raw.status || "OPEN").toUpperCase(),
+    source: raw.source || null,
+    title: raw.title || null,
+    routeStatus: raw.route_status || raw.routeStatus || null,
+    decisionLevel: normalizeLevel(raw.decision_level || raw.decisionLevel),
+    robotName:
+      raw.robot
+        ? raw.robot.robotName || raw.robot.robot_name
+        : raw.robotName || null,
+    createdAt: raw.created_at || raw.createdAt || null
+  };
+}
+
+/** One active incident per drain, preferring the most severe. */
+export function buildActiveIncidentByDrain(incidents) {
+  const map = {};
+  for (const raw of asArray(incidents)) {
+    const signal = normalizeIncidentSignal(raw) || (raw && raw.id ? raw : null);
+    if (!signal || !isActiveIncident(signal)) continue;
+    const existing = map[signal.drainId];
+    if (
+      !existing ||
+      (LEVEL_RANK[signal.severity] || 0) >= (LEVEL_RANK[existing.severity] || 0)
+    ) {
+      map[signal.drainId] = signal;
+    }
+  }
+  return map;
 }
 
 // ------------------------------------------------------------
@@ -386,6 +459,7 @@ function mergeDrainLive(prev, patch) {
 export function digitalTwinReducer(state, action) {
   switch (action.type) {
     case "SET_DATA": {
+      const incidents = asArray(action.incidents);
       return {
         ...state,
         drains: action.drains,
@@ -397,6 +471,9 @@ export function digitalTwinReducer(state, action) {
         origin: action.origin,
         metrics: action.metrics,
         decisionsByDrain: action.decisionsByDrain || {},
+        incidents,
+        activeIncidentByDrain:
+          action.activeIncidentByDrain || buildActiveIncidentByDrain(incidents),
         loadError: action.loadError,
         refreshNonce: (state.refreshNonce || 0) + 1
       };
@@ -498,6 +575,30 @@ export function digitalTwinReducer(state, action) {
         })
       };
       return { ...state, byDrain };
+    }
+
+    case "INCIDENT_UPDATE": {
+      const raw =
+        action.payload && action.payload.incident
+          ? action.payload.incident
+          : action.payload;
+      const signal = normalizeIncidentSignal(raw);
+      if (!signal) return state;
+
+      const incidents = (state.incidents || [])
+        .filter((incident) => incident.id !== signal.id)
+        .concat([signal]);
+
+      const activeIncidentByDrain = { ...(state.activeIncidentByDrain || {}) };
+      const existing = activeIncidentByDrain[signal.drainId];
+
+      if (isActiveIncident(signal)) {
+        activeIncidentByDrain[signal.drainId] = signal;
+      } else if (existing && existing.id === signal.id) {
+        delete activeIncidentByDrain[signal.drainId];
+      }
+
+      return { ...state, incidents, activeIncidentByDrain };
     }
 
     case "ROUTE_UPDATE": {

@@ -25,6 +25,7 @@ const floodRisk = require("./floodRiskService");
 const floodForecast = require("./floodForecastService");
 const maintenanceService = require("./maintenancePredictionService");
 const decisionEngine = require("./decisionEngine");
+const incidentService = require("./incidentService");
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
@@ -798,6 +799,21 @@ async function handleMessage(topic, rawPayload, context = {}) {
             decisionPriorityLevel: decisionResult.priorityLevel,
             decisionRecommendedAction: decisionResult.recommendedAction
           };
+
+          // Emergency response integration (additive + fire-and-forget).
+          // A REAL CRITICAL decision may produce an incident; the
+          // incident service dedupes active incidents per drain and its
+          // failures can never break the existing sensor pipeline.
+          if (decisionResult.priorityLevel === "CRITICAL") {
+            incidentService
+              .createIncidentFromDecision({
+                drainId: Number(drainId),
+                decision: decisionResult
+              })
+              .catch((incidentErr) => {
+                console.log("⚠️ Incident creation skipped:", incidentErr.message);
+              });
+          }
         }
       }
     } catch (decisionErr) {

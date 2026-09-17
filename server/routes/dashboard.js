@@ -8,6 +8,7 @@ const maintenanceService = require("../services/maintenancePredictionService");
 const decisionEngine = require("../services/decisionEngine");
 const robotPathPlanning = require("../services/robotPathPlanningService");
 const mqttService = require("../services/mqttService");
+const incidentService = require("../services/incidentService");
 
 router.get("/", async (req, res) => {
   try {
@@ -21,10 +22,33 @@ router.get("/", async (req, res) => {
       "SELECT COUNT(*) FROM alerts WHERE severity = 'Critical'"
     );
 
+    // Emergency / incident intelligence — additive. Best-effort: if
+    // the incidents table is somehow unavailable the existing fields
+    // still respond with a safe default (no fabricated numbers).
+    let incidents = {
+      counts: {
+        active: 0,
+        critical: 0,
+        responding: 0,
+        resolved: 0,
+        open: 0,
+        acknowledged: 0,
+        total: 0
+      },
+      latest: []
+    };
+
+    try {
+      incidents = await incidentService.getDashboardSummary();
+    } catch (incidentErr) {
+      console.log("⚠️ Dashboard incident summary skipped:", incidentErr.message);
+    }
+
     res.json({
       totalDrains: Number(totalDrains.rows[0].count),
       activeRobots: Number(activeRobots.rows[0].count),
       criticalAlerts: Number(criticalAlerts.rows[0].count),
+      incidents
     });
 
   } catch (err) {

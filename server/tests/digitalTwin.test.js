@@ -428,3 +428,105 @@ test("Digital Twin data endpoint consumption requires no write: authentication s
   assert.ok(res.body.totalDrains !== undefined);
   assert.ok(res.body.activeRobots !== undefined);
 });
+
+// ============================================================
+// 3. Additive incident overlay (Update #18)
+//
+// The twin consumes the same /api/incidents/active contract and
+// stays fully usable (empty overlay + degraded flag) if the
+// incident API is unavailable. No behavior here is fabricated.
+// ============================================================
+
+test("incidents: normalizeIncidentSignal maps a real incidents row and never invents ids", () => {
+  const signal = u.normalizeIncidentSignal({
+    id: 12,
+    drain_id: 3,
+    severity: "high",
+    status: "responding",
+    source: "FLOOD_RISK",
+    route_status: "PLANNED",
+    decision_level: "critical",
+    created_at: "2026-01-01T00:00:00Z",
+    drain: { id: 3, zone: "Zone A", location: "Main St" },
+    robot: { robotName: "Robot-A1" }
+  });
+
+  assert.equal(signal.id, 12);
+  assert.equal(signal.drainId, 3);
+  assert.equal(signal.severity, "HIGH");
+  assert.equal(signal.status, "RESPONDING");
+  assert.equal(signal.routeStatus, "PLANNED");
+  assert.equal(signal.decisionLevel, "CRITICAL");
+  assert.equal(signal.robotName, "Robot-A1");
+  assert.equal(signal.zone, "Zone A");
+
+  assert.equal(u.normalizeIncidentSignal({ severity: "HIGH" }), null);
+  assert.equal(u.normalizeIncidentSignal(null), null);
+});
+
+test("incidents: buildActiveIncidentByDrain keeps only active incidents, preferring severity", () => {
+  const map = u.buildActiveIncidentByDrain([
+    { id: 1, drain_id: 5, severity: "HIGH", status: "OPEN" },
+    { id: 2, drain_id: 5, severity: "CRITICAL", status: "RESPONDING" },
+    { id: 3, drain_id: 6, severity: "CRITICAL", status: "RESOLVED" },
+    { id: 4, drain_id: 7, severity: "MODERATE", status: "ACKNOWLEDGED" }
+  ]);
+
+  assert.equal(map[5].id, 2, "most severe active incident wins");
+  assert.equal(map[6], undefined, "resolved incidents are not active");
+  assert.equal(map[7].id, 4);
+  assert.equal(Object.keys(map).length, 2);
+});
+
+test("reducer: INCIDENT_UPDATE overlays active incidents and clears them on resolve", () => {
+  let state = u.digitalTwinReducer(
+    { incidents: [], activeIncidentByDrain: {} },
+    {
+      type: "INCIDENT_UPDATE",
+      payload: {
+        eventType: "created",
+        incident: { id: 9, drain_id: 2, severity: "CRITICAL", status: "OPEN", source: "AI_DECISION" }
+      }
+    }
+  );
+
+  assert.equal(state.activeIncidentByDrain[2].id, 9);
+  assert.equal(state.incidents.length, 1);
+
+  state = u.digitalTwinReducer(state, {
+    type: "INCIDENT_UPDATE",
+    payload: { eventType: "resolved", incident: { id: 9, drain_id: 2, severity: "CRITICAL", status: "RESOLVED" } }
+  });
+
+  assert.equal(state.activeIncidentByDrain[2], undefined);
+  assert.equal(state.incidents.length, 1);
+  assert.equal(state.incidents[0].status, "RESOLVED");
+});
+
+test("reducer: SET_DATA derives activeIncidentByDrain from a real incidents list", () => {
+  const state = u.digitalTwinReducer({}, {
+    type: "SET_DATA",
+    drains: [], sensors: [], robots: [], chargingStations: [], routes: [],
+    missions: [], origin: null, metrics: {},
+    loadError: ["incidents"],
+    incidents: [{ id: 3, drain_id: 1, severity: "LOW", status: "OPEN" }]
+  });
+
+  assert.equal(state.activeIncidentByDrain[1].id, 3);
+  assert.ok(state.loadError.includes("incidents"), "degraded state is reported, not hidden");
+});
+
+test("utils: fuseDrains attaches the active incident without touching risk/decision levels", () => {
+  const fused = u.fuseDrains(
+    [{ id: 4, status: "Warning", waterLevel: 20 }],
+    {},
+    {},
+    { 4: { id: 55, drainId: 4, severity: "HIGH", status: "RESPONDING" } }
+  );
+
+  assert.equal(fused[0].incident.id, 55);
+  assert.equal(fused[0].incident.status, "RESPONDING");
+  assert.equal(fused[0].riskLevel, null);
+  assert.equal(fused[0].decisionLevel, null);
+  assert.equal(fused[0].waterLevel, 20);
+});
