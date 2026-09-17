@@ -23,7 +23,8 @@ import {
   FaTint,
   FaRoute,
   FaClock,
-  FaSearch
+  FaSearch,
+  FaBolt
 } from "react-icons/fa";
 
 import DigitalTwin from "./DigitalTwin";
@@ -34,6 +35,8 @@ import {
 } from "../services/digitalTwinService";
 import {
   LEVEL_COLOR,
+  AVAILABILITY_COLOR,
+  FLEET_STATUS_COLOR,
   digitalTwinReducer,
   fuseDrains
 } from "../services/digitalTwinUtils.mjs";
@@ -54,6 +57,7 @@ const INITIAL_STATE = {
   decisionsByDrain: {},
   incidents: [],
   activeIncidentByDrain: {},
+  fleet: null,
   byDrain: {},
   bySensor: {}
 };
@@ -97,8 +101,12 @@ function DetailsField({ label, value }) {
 // Drain details panel (drainId, fused drain, lazy API details)
 // ------------------------------------------------------------
 
-function DrainDetails({ drain, details }) {
+function DrainDetails({ drain, details, fleetUnassigned }) {
   const danger = drain.status === "Critical" || drain.riskLevel === "CRITICAL";
+  const fleet = drain.fleet || null;
+  const unassigned =
+    fleetUnassigned ||
+    (fleet && fleet.recommendationStatus === "UNASSIGNED" ? fleet : null);
 
   return (
     <div>
@@ -133,6 +141,47 @@ function DrainDetails({ drain, details }) {
               {drain.incident.routeStatus ? ` · ${drain.incident.routeStatus}` : ""}
             </span>
           </div>
+        </div>
+      )}
+
+      {(fleet || unassigned) && (
+        <div className="dt-details-grid">
+          <div className="dt-field">
+            <span className="dt-field-label">Fleet assignment (advisory)</span>
+            <span
+              className="dt-field-value"
+              style={{
+                color: unassigned ? "#dc2626" : "#0891b2",
+                fontWeight: 600
+              }}
+            >
+              {unassigned
+                ? `Unassigned · ${unassigned.reason || "no eligible robot"}`
+                : `${fleet.recommendedRobotName || `Robot ${fleet.recommendedRobotId}`} · ${fleet.routeMode || "route"}`}
+            </span>
+          </div>
+          {fleet && fleet.estimatedTravelTime != null && (
+            <div className="dt-field">
+              <span className="dt-field-label">Estimated travel</span>
+              <span className="dt-field-value">
+                {Math.max(1, Math.round(fleet.estimatedTravelTime / 60))} min
+              </span>
+            </div>
+          )}
+          {fleet && fleet.chargingRequired && (
+            <div className="dt-field">
+              <span className="dt-field-label">Charging</span>
+              <span className="dt-field-value" style={{ color: "#f59e0b", fontWeight: 600 }}>
+                Charging stop required
+              </span>
+            </div>
+          )}
+          {unassigned && unassigned.requiredAction && (
+            <div className="dt-field">
+              <span className="dt-field-label">Required action</span>
+              <span className="dt-field-value">{unassigned.requiredAction}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -233,7 +282,7 @@ function DrainDetails({ drain, details }) {
   );
 }
 
-function RobotDetails({ robot }) {
+function RobotDetails({ robot, fleetInfo }) {
   return (
     <div>
       <div className="dt-section-title" style={{ color: "#16a34a" }}>
@@ -246,6 +295,42 @@ function RobotDetails({ robot }) {
         <DetailsField label="Assigned zone" value={robot.zone} />
         <DetailsField label="Last active" value={formatTime(robot.lastActive)} />
       </div>
+
+      {fleetInfo && (
+        <>
+          <div className="dt-section-title" style={{ color: "#0891b2" }}>
+            FLEET OPTIMIZATION (ADVISORY)
+          </div>
+          <div className="dt-details-grid">
+            <div className="dt-field">
+              <span className="dt-field-label">Availability</span>
+              <span
+                className="dt-field-value"
+                style={{
+                  color: AVAILABILITY_COLOR[fleetInfo.availabilityState] || "#334155",
+                  fontWeight: 600
+                }}
+              >
+                {fleetInfo.availabilityState || "Data unavailable"}
+              </span>
+            </div>
+            <div className="dt-field">
+              <span className="dt-field-label">Suggested task</span>
+              <span className="dt-field-value">
+                {fleetInfo.recommendedDrainId != null
+                  ? `Drain ${fleetInfo.recommendedDrainId}${fleetInfo.chargingRequired ? " (charge first)" : ""}`
+                  : "None"}
+              </span>
+            </div>
+            {fleetInfo.estimatedAvailableReason && (
+              <div className="dt-field">
+                <span className="dt-field-label">Availability note</span>
+                <span className="dt-field-value">{fleetInfo.estimatedAvailableReason}</span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -322,7 +407,7 @@ function RouteDetails({ route }) {
 // Fallback / accessibility data list (non-3D access)
 // ------------------------------------------------------------
 
-function FallbackTable({ fusedDrains, robots, onSelect, selected }) {
+function FallbackTable({ fusedDrains, robots, fleetByRobot, onSelect, selected }) {
   const visibleDrains = fusedDrains
     .filter((d) => d.x !== null && d.z !== null)
     .slice(0, 500);
@@ -344,12 +429,13 @@ function FallbackTable({ fusedDrains, robots, onSelect, selected }) {
               <th>AI decision</th>
               <th>Forecast</th>
               <th>Maintenance</th>
+              <th>Fleet (advisory)</th>
             </tr>
           </thead>
           <tbody>
             {visibleDrains.length === 0 && (
               <tr>
-                <td colSpan="8" style={{ textAlign: "center", color: "#94a3b8" }}>
+                <td colSpan="9" style={{ textAlign: "center", color: "#94a3b8" }}>
                   No drain data available.
                 </td>
               </tr>
@@ -397,6 +483,17 @@ function FallbackTable({ fusedDrains, robots, onSelect, selected }) {
                 <td>
                   <LevelBadge value={drain.maintenanceLevel} score={drain.maintenanceScore} />
                 </td>
+                <td>
+                  {drain.fleet && drain.fleet.recommendedRobotId != null ? (
+                    <span style={{ color: "#0891b2", fontWeight: 600 }}>
+                      → {drain.fleet.recommendedRobotName || `Robot ${drain.fleet.recommendedRobotId}`}
+                    </span>
+                  ) : drain.fleet && drain.fleet.recommendationStatus === "UNASSIGNED" ? (
+                    <span style={{ color: "#dc2626", fontWeight: 600 }}>unassigned</span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -415,6 +512,7 @@ function FallbackTable({ fusedDrains, robots, onSelect, selected }) {
                   <th>Zone</th>
                   <th>Status</th>
                   <th>Battery</th>
+                  <th>Fleet (advisory)</th>
                 </tr>
               </thead>
               <tbody>
@@ -439,6 +537,25 @@ function FallbackTable({ fusedDrains, robots, onSelect, selected }) {
                       <td>{robot.zone}</td>
                       <td>{robot.status}</td>
                       <td>{robot.batteryLevel != null ? `${Math.round(robot.batteryLevel)}%` : "—"}</td>
+                      <td>
+                        {fleetByRobot && fleetByRobot[robot.id] ? (
+                          <span
+                            style={{
+                              color:
+                                AVAILABILITY_COLOR[fleetByRobot[robot.id].availabilityState] ||
+                                "#334155",
+                              fontWeight: 600
+                            }}
+                          >
+                            {fleetByRobot[robot.id].availabilityState || "—"}
+                            {fleetByRobot[robot.id].recommendedDrainId != null
+                              ? ` → drain ${fleetByRobot[robot.id].recommendedDrainId}`
+                              : ""}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                     </tr>
                   ))}
               </tbody>
@@ -527,6 +644,9 @@ function DigitalTwinPage({ initialView = "overview" }) {
     const onIncident = (payload) => {
       if (payload && payload.incident) dispatch({ type: "INCIDENT_UPDATE", payload });
     };
+    const onFleet = (payload) => {
+      if (payload) dispatch({ type: "FLEET_OPTIMIZATION_UPDATE", payload });
+    };
 
     socket.on("sensorUpdate", onSensor);
     socket.on("floodRiskUpdate", onRisk);
@@ -537,6 +657,7 @@ function DigitalTwinPage({ initialView = "overview" }) {
     socket.on("robotRouteUpdate", onRoute);
     socket.on("dashboardUpdate", onDashboard);
     socket.on("incidentUpdate", onIncident);
+    socket.on("fleetOptimizationUpdate", onFleet);
 
     return () => {
       socket.off("sensorUpdate", onSensor);
@@ -548,8 +669,13 @@ function DigitalTwinPage({ initialView = "overview" }) {
       socket.off("robotRouteUpdate", onRoute);
       socket.off("dashboardUpdate", onDashboard);
       socket.off("incidentUpdate", onIncident);
+      socket.off("fleetOptimizationUpdate", onFleet);
     };
   }, []);
+
+  const fleet = state.fleet || null;
+  const fleetByDrain = fleet && fleet.byDrain ? fleet.byDrain : null;
+  const fleetByRobot = fleet && fleet.byRobot ? fleet.byRobot : null;
 
   const fusedDrains = useMemo(
     () =>
@@ -557,9 +683,16 @@ function DigitalTwinPage({ initialView = "overview" }) {
         state.drains,
         state.byDrain,
         state.decisionsByDrain || {},
-        state.activeIncidentByDrain || {}
+        state.activeIncidentByDrain || {},
+        fleetByDrain || {}
       ),
-    [state.drains, state.byDrain, state.decisionsByDrain, state.activeIncidentByDrain]
+    [
+      state.drains,
+      state.byDrain,
+      state.decisionsByDrain,
+      state.activeIncidentByDrain,
+      fleetByDrain
+    ]
   );
 
   const handleSelect = (type, id) => {
@@ -591,6 +724,13 @@ function DigitalTwinPage({ initialView = "overview" }) {
   const selectedRoute = selected && selected.type === "route"
     ? state.routes.find((r) => Number(r.drainId) === Number(selected.id)) || null
     : null;
+
+  const selectedRobotFleet =
+    selectedRobot && fleetByRobot ? fleetByRobot[selectedRobot.id] || null : null;
+  const selectedDrainFleetUnassigned =
+    selectedDrain && fleet && fleet.unassignedByDrain
+      ? fleet.unassignedByDrain[selectedDrain.id] || null
+      : null;
 
   const metrics = state.metrics || {
     totalDrains: 0,
@@ -669,6 +809,16 @@ function DigitalTwinPage({ initialView = "overview" }) {
           <div>
             <div className="dt-stat-value">{metrics.activeRoutes || 0}</div>
             <div className="dt-stat-label">Active routes</div>
+          </div>
+        </div>
+
+        <div className="dt-stat">
+          <div className="dt-stat-icon" style={{ background: fleet ? FLEET_STATUS_COLOR[fleet.status] || "#64748b" : "#94a3b8" }}>
+            <FaBolt />
+          </div>
+          <div>
+            <div className="dt-stat-value">{fleet ? fleet.summary.unassignedTasks : "—"}</div>
+            <div className="dt-stat-label">Unassigned tasks</div>
           </div>
         </div>
 
@@ -777,8 +927,16 @@ function DigitalTwinPage({ initialView = "overview" }) {
               Close
             </button>
           </div>
-          {selectedDrain && <DrainDetails drain={selectedDrain} details={details} />}
-          {selectedRobot && <RobotDetails robot={selectedRobot} />}
+          {selectedDrain && (
+            <DrainDetails
+              drain={selectedDrain}
+              details={details}
+              fleetUnassigned={selectedDrainFleetUnassigned}
+            />
+          )}
+          {selectedRobot && (
+            <RobotDetails robot={selectedRobot} fleetInfo={selectedRobotFleet} />
+          )}
           {selectedSensor && <SensorDetails sensor={selectedSensor} />}
           {selectedStation && <StationDetails station={selectedStation} />}
           {selectedRoute && <RouteDetails route={selectedRoute} />}
@@ -789,6 +947,7 @@ function DigitalTwinPage({ initialView = "overview" }) {
       <FallbackTable
         fusedDrains={fusedDrains}
         robots={state.robots}
+        fleetByRobot={fleetByRobot}
         onSelect={handleSelect}
         selected={selected}
       />

@@ -11,7 +11,8 @@ import {
   FaUsers,
   FaSignOutAlt,
   FaListOl,
-  FaAmbulance
+  FaAmbulance,
+  FaTruckMoving
 } from "react-icons/fa";
 
 import "../../styles/sidebar.css";
@@ -91,6 +92,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
           >
             <FaAmbulance />
             <span>Emergency / Incidents</span>
+          </li>
+
+          {/* Fleet Optimization (Update #19) */}
+          <li
+            className={activePage === "fleetoptimization" ? "active" : ""}
+            onClick={() => onNavigate("fleetoptimization")}
+          >
+            <FaTruckMoving />
+            <span>Fleet Optimization</span>
           </li>
 
           {/* AI Prediction */}

@@ -343,8 +343,13 @@ Every real change emits `incidentUpdate` through the existing shared hub:
 
 ### `GET /api/dashboard`
 - **Access**: Public / Authenticated
-- **Response** (200 OK): `{ "totalDrains": 7, "activeRobots": 1, "criticalAlerts": 2, "incidents": { "counts": { "active": 1, "critical": 1, "responding": 0, "resolved": 2, "open": 1, "acknowledged": 0, "total": 3 }, "latest": [ ...incidents ] } }`
+- **Response** (200 OK): `{ "totalDrains": 7, "activeRobots": 1, "criticalAlerts": 2, "incidents": { "counts": { "active": 1, "critical": 1, "responding": 0, "resolved": 2, "open": 1, "acknowledged": 0, "total": 3 }, "latest": [ ...incidents ] }, "fleet": { "totalRobots": 5, "availableRobots": 2, "busyRobots": 1, "chargingRobots": 1, "lowBatteryRobots": 1, "activeTasks": 1, "unassignedTasks": 0, "recommendedAssignments": 1, "fleetUtilization": 40, "status": "OK" } }`
   - `incidents` is **additive** (Update #18) and best-effort: existing fields are unchanged.
+  - `fleet` is **additive** (Update #19), camelCase and best-effort. See [fleet-optimization.md](fleet-optimization.md).
+
+### `GET /api/dashboard/fleet`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status", "generated_at", "summary", "warnings", "disclaimer" }` — the advisory fleet summary. See [fleet-optimization.md](fleet-optimization.md).
 
 ### `GET /api/dashboard/risk`
 - **Access**: Public / Authenticated
@@ -389,7 +394,7 @@ Every real change emits `incidentUpdate` through the existing shared hub:
   - `total_cleanings` / `robot_operations` / `total_missions`: mission records.
   - `blockages_detected`: open Critical alerts.
   - `flood_predictions`: sensor readings count.
-  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)).
+  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)), and additive fleet fields `fleet_status`, `fleet_total_robots`, `fleet_available_robots`, `fleet_busy_robots`, `fleet_charging_robots`, `fleet_low_battery_robots`, `fleet_utilization`, `fleet_active_tasks`, `fleet_assigned_tasks`, `fleet_unassigned_tasks`, `fleet_assignment_coverage`, `fleet_average_response_minutes` (see [fleet-optimization.md](fleet-optimization.md)).
 
 ### `GET /api/analytics/monthly`
 - **Access**: Public / Authenticated
@@ -428,3 +433,61 @@ Every real change emits `incidentUpdate` through the existing shared hub:
 ### `GET /api/analytics/incidents`
 - **Access**: Public / Authenticated
 - **Response** (200 OK): Incident analytics: `total`, `by_severity`, `by_status`, `by_source`, `average_response_seconds` / `average_response_minutes`, `average_resolution_seconds` / `average_resolution_minutes`, and a `data_points` count. Averages are computed only from **real** stored timestamps and are `null` when there is not enough data. See [incidents.md](incidents.md).
+
+### `GET /api/analytics/fleet-optimization`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Fleet optimization analytics in snake_case: `status`, `generated_at`, `robot_utilization`, `available_robots`, `busy_robots`, `charging_robots`, `low_battery_robots`, `offline_robots`, `unavailable_robots`, `total_robots`, `task_assignment_coverage`, `active_tasks`, `assigned_tasks`, `unassigned_task_count`, `average_estimated_response_seconds` / `average_estimated_response_minutes`, `battery_risk_count`, `charging_requirement_count`, `unassigned_reasons`, and `disclaimer`. Averages are `null` when there is not enough real data. See [fleet-optimization.md](fleet-optimization.md).
+
+### Advisory Socket event
+Fleet optimization emits `fleetOptimizationUpdate` (signature-guarded, only on meaningful change) through the existing shared hub:
+```json
+{ "status": "OK", "summary": { "active_tasks": 1, "unassigned_tasks": 0 }, "tasks": [], "recommendations": [], "robots": [], "unassigned": [], "generated_at": "..." }
+```
+
+---
+
+## Fleet Optimization API (`/api/fleet-optimization`)
+
+A **read-only, advisory** fleet-level layer. It never assigns or dispatches robots
+(`missionEngine.js` remains the authority) and never changes state. All routes are Public.
+See [fleet-optimization.md](fleet-optimization.md).
+
+### `GET /api/fleet-optimization`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Full advisory view: `status`, `generated_at`, `summary`,
+  `robots`, `tasks`, `recommendations`, `unassigned`, `robots_without_assignment`,
+  `robots_requiring_charging`, `warnings` and `disclaimer`. `status` is one of
+  `OK | NO_TASKS | NO_ROBOTS | NO_ELIGIBLE_ROBOT | NO_COORDINATES | NO_FEASIBLE_ROUTE | INSUFFICIENT_DATA`.
+
+### `GET /api/fleet-optimization/summary`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `status`, `generated_at`, `summary`, `warnings`, `disclaimer`.
+
+### `GET /api/fleet-optimization/tasks`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `status`, `generated_at`, and the prioritized `tasks` array
+  (priority score/status/breakdown, `recommendation_status`, `recommended_robot_id`,
+  `route_mode`, `candidate_score`).
+
+### `GET /api/fleet-optimization/robots`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `status`, `generated_at`, and the `robots` array with
+  `availability_state` (`AVAILABLE | BUSY | CHARGING | LOW_BATTERY | OFFLINE | UNAVAILABLE`),
+  battery, location, current mission/target and `estimated_available_time`/`reason`.
+
+### `GET /api/fleet-optimization/recommendations`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `status`, `generated_at`, `recommendations` (chosen robot, route
+  mode, distance/time/battery estimates, reasons, warnings, explanation, alternatives),
+  `unassigned` (reason + required action), `robots_without_assignment`,
+  `robots_requiring_charging`, `warnings`, `disclaimer`.
+
+### `GET /api/fleet-optimization/analytics`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Same shape as `/api/analytics/fleet-optimization`.
+
+### `GET /api/fleet-optimization/:taskId`
+- **Access**: Public / Authenticated
+- **Path Params**: `taskId` = `incident:<id>` or `drain:<id>`.
+- **Response** (200 OK): `status`, `generated_at`, `task`, `recommendation`, `unassigned`, `disclaimer`.
+- **Response** (404): `{ "error": "Task not found" }`

@@ -327,11 +327,18 @@ export function normalizeRoute(raw, origin) {
 // stays a pure function of a single object graph.
 // ------------------------------------------------------------
 
-export function fuseDrains(drains, liveByDrain, decisionsByDrain, incidentsByDrain = {}) {
+export function fuseDrains(
+  drains,
+  liveByDrain,
+  decisionsByDrain,
+  incidentsByDrain = {},
+  fleetByDrain = {}
+) {
   return drains.map((drain) => {
     const live = liveByDrain[drain.id] || {};
     const decision = decisionsByDrain[drain.id] || {};
     const incident = incidentsByDrain[drain.id] || null;
+    const fleet = fleetByDrain[drain.id] || null;
 
     const riskLevel =
       normalizeLevel(live.riskLevel) ||
@@ -370,7 +377,8 @@ export function fuseDrains(drains, liveByDrain, decisionsByDrain, incidentsByDra
       maintenanceScore: safeNumber(live.maintenanceScore, null),
       visionLevel: normalizeLevel(live.visionLevel),
       visionScore: safeNumber(live.visionScore, null),
-      incident
+      incident,
+      fleet
     };
   });
 }
@@ -447,6 +455,216 @@ export function buildActiveIncidentByDrain(incidents) {
 }
 
 // ------------------------------------------------------------
+// Fleet optimization (Update #19) — additive advisory overlay
+//
+// The twin consumes GET /api/fleet-optimization (and the
+// "fleetOptimizationUpdate" socket event). This overlay is
+// ADVISORY ONLY: it never assigns or moves robots. When the API is
+// unavailable the twin degrades honestly to fleet = null and every
+// fleet marker is simply not drawn.
+// ------------------------------------------------------------
+
+export const AVAILABILITY_COLOR = {
+  AVAILABLE: "#22c55e",
+  BUSY: "#3b82f6",
+  CHARGING: "#f59e0b",
+  LOW_BATTERY: "#dc2626",
+  OFFLINE: "#64748b",
+  UNAVAILABLE: "#94a3b8"
+};
+
+export const FLEET_STATUS_COLOR = {
+  OK: "#16a34a",
+  NO_TASKS: "#64748b",
+  NO_ROBOTS: "#94a3b8",
+  NO_ELIGIBLE_ROBOT: "#f59e0b",
+  NO_COORDINATES: "#ea580c",
+  NO_FEASIBLE_ROUTE: "#dc2626",
+  INSUFFICIENT_DATA: "#94a3b8"
+};
+
+export const AVAILABILITY_STATES = [
+  "AVAILABLE",
+  "BUSY",
+  "CHARGING",
+  "LOW_BATTERY",
+  "OFFLINE",
+  "UNAVAILABLE"
+];
+
+/** Canonicalize a robot availability label, or null when unknown. */
+export function normalizeAvailabilityState(value) {
+  if (value === null || value === undefined) return null;
+  const upper = String(value).toUpperCase();
+  return AVAILABILITY_STATES.includes(upper) ? upper : null;
+}
+
+/**
+ * Normalize a /api/fleet-optimization payload into the compact
+ * overlay the twin needs. Returns null for a missing/invalid
+ * payload so callers can degrade to "no fleet overlay".
+ */
+export function normalizeFleetOptimization(payload) {
+  if (!payload || typeof payload !== "object") return null;
+
+  const summary = payload.summary || {};
+  const robots = asArray(payload.robots);
+  const tasks = asArray(payload.tasks);
+  const recommendations = asArray(payload.recommendations);
+  const unassigned = asArray(payload.unassigned);
+
+  const byRobot = {};
+  for (const robot of robots) {
+    const robotId = safeNumber(robot && robot.robot_id, null);
+    if (robotId === null) continue;
+    byRobot[robotId] = {
+      robotId,
+      availabilityState: normalizeAvailabilityState(robot.availability_state),
+      batteryLevel: safeNumber(robot.battery_level, null),
+      currentMissionId: safeNumber(robot.current_mission_id, null),
+      targetDrainId: safeNumber(robot.target_drain_id, null),
+      chargingStationId: safeNumber(robot.charging_station_id, null),
+      estimatedAvailableReason: robot.estimated_available_reason || null,
+      estimatedAvailableTime: robot.estimated_available_time || null,
+      recommendedTaskId: null,
+      recommendedDrainId: null,
+      recommendedPriorityScore: null,
+      recommendedRouteMode: null,
+      chargingRequired: false
+    };
+  }
+
+  const byDrain = {};
+  const unassignedByDrain = {};
+
+  const recordTask = (task, recommendation) => {
+    const drainId = safeNumber(task && task.drain_id, null);
+    if (drainId === null) return;
+
+    const recommendedRobotId = safeNumber(
+      task.recommended_robot_id !== undefined
+        ? task.recommended_robot_id
+        : recommendation && recommendation.robot_id,
+      null
+    );
+    const routeMode =
+      task.route_mode || (recommendation ? recommendation.route_mode : null) || null;
+    const chargingRequired = Boolean(
+      recommendation && recommendation.charging_required
+    );
+
+    byDrain[drainId] = {
+      taskId: task.task_id || (recommendation && recommendation.task_id) || null,
+      drainId,
+      incidentId: safeNumber(task.incident_id, null),
+      severity:
+        normalizeLevel(task.severity) ||
+        (task.severity ? String(task.severity).toUpperCase() : null),
+      priorityScore: safeNumber(task.priority_score, null),
+      priorityStatus: task.priority_status || null,
+      recommendationStatus: task.recommendation_status || null,
+      recommendedRobotId,
+      recommendedRobotName:
+        task.recommended_robot_name ||
+        (recommendation ? recommendation.robot_name : null) ||
+        null,
+      routeMode,
+      candidateScore: safeNumber(task.candidate_score, null),
+      chargingRequired,
+      estimatedTravelTime: recommendation
+        ? safeNumber(recommendation.estimated_travel_time, null)
+        : null,
+      status: task.status || null
+    };
+
+    // Mirror the assignment onto the robot so the 3D robot object can
+    // be highlighted without scanning every drain.
+    if (recommendedRobotId !== null) {
+      const existing = byRobot[recommendedRobotId];
+      byRobot[recommendedRobotId] = {
+        robotId: recommendedRobotId,
+        availabilityState: existing ? existing.availabilityState : null,
+        batteryLevel: existing ? existing.batteryLevel : null,
+        currentMissionId: existing ? existing.currentMissionId : null,
+        targetDrainId: existing ? existing.targetDrainId : null,
+        chargingStationId: existing ? existing.chargingStationId : null,
+        estimatedAvailableReason: existing ? existing.estimatedAvailableReason : null,
+        estimatedAvailableTime: existing ? existing.estimatedAvailableTime : null,
+        recommendedTaskId: byDrain[drainId].taskId,
+        recommendedDrainId: drainId,
+        recommendedPriorityScore: byDrain[drainId].priorityScore,
+        recommendedRouteMode: routeMode,
+        chargingRequired
+      };
+    }
+  };
+
+  const recommendationByTask = new Map();
+  for (const rec of recommendations) {
+    if (rec && rec.task_id) recommendationByTask.set(rec.task_id, rec);
+  }
+
+  for (const task of tasks) {
+    recordTask(task, recommendationByTask.get(task.task_id));
+  }
+  // A recommendations-only payload (e.g. focus view) still carries
+  // enough real data to overlay the scene.
+  if (tasks.length === 0) {
+    for (const rec of recommendations) recordTask(rec, rec);
+  }
+
+  for (const item of unassigned) {
+    const drainId = safeNumber(item && item.drain_id, null);
+    if (drainId === null) continue;
+    unassignedByDrain[drainId] = {
+      taskId: item.task_id || null,
+      drainId,
+      severity:
+        normalizeLevel(item.severity) ||
+        (item.severity ? String(item.severity).toUpperCase() : null),
+      priorityScore: safeNumber(item.priority_score, null),
+      reason: item.reason || null,
+      requiredAction: item.required_action || null
+    };
+  }
+
+  const criticalUnassignedDrainIds = Object.values(unassignedByDrain)
+    .filter(
+      (item) =>
+        item.severity === "CRITICAL" ||
+        (item.priorityScore !== null && item.priorityScore >= 75)
+    )
+    .map((item) => item.drainId);
+
+  return {
+    status: payload.status || null,
+    generatedAt: payload.generated_at || null,
+    disclaimer: payload.disclaimer || null,
+    warnings: asArray(payload.warnings),
+    byRobot,
+    byDrain,
+    unassignedByDrain,
+    criticalUnassignedDrainIds,
+    summary: {
+      totalRobots: safeNumber(summary.total_robots, 0),
+      availableRobots: safeNumber(summary.available_robots, 0),
+      busyRobots: safeNumber(summary.busy_robots, 0),
+      chargingRobots: safeNumber(summary.charging_robots, 0),
+      lowBatteryRobots: safeNumber(summary.low_battery_robots, 0),
+      offlineRobots: safeNumber(summary.offline_robots, 0),
+      unavailableRobots: safeNumber(summary.unavailable_robots, 0),
+      activeTasks: safeNumber(summary.active_tasks, 0),
+      assignedTasks: safeNumber(summary.assigned_tasks, 0),
+      unassignedTasks: safeNumber(summary.unassigned_tasks, 0),
+      recommendedAssignments: safeNumber(summary.recommended_assignments, 0),
+      fleetUtilization: safeNumber(summary.fleet_utilization, null),
+      batteryRiskCount: safeNumber(summary.battery_risk_count, 0),
+      chargingRequirementCount: safeNumber(summary.charging_requirement_count, 0)
+    }
+  };
+}
+
+// ------------------------------------------------------------
 // Live socket state reducer (single immutable reducer shared by
 // the Digital Twin page/preview so every event path is pure and
 // testable without a browser).
@@ -474,6 +692,12 @@ export function digitalTwinReducer(state, action) {
         incidents,
         activeIncidentByDrain:
           action.activeIncidentByDrain || buildActiveIncidentByDrain(incidents),
+        fleet:
+          action.fleet !== undefined
+            ? action.fleet
+            : state.fleet
+              ? state.fleet
+              : null,
         loadError: action.loadError,
         refreshNonce: (state.refreshNonce || 0) + 1
       };
@@ -599,6 +823,12 @@ export function digitalTwinReducer(state, action) {
       }
 
       return { ...state, incidents, activeIncidentByDrain };
+    }
+
+    case "FLEET_OPTIMIZATION_UPDATE": {
+      const fleet = normalizeFleetOptimization(action.payload);
+      if (!fleet) return state;
+      return { ...state, fleet };
     }
 
     case "ROUTE_UPDATE": {

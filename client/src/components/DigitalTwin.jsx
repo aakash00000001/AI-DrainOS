@@ -28,6 +28,7 @@ import * as THREE from "three";
 
 import {
   LEVEL_COLOR,
+  AVAILABILITY_COLOR,
   normalizeLevel,
   safeWaterLevel,
   waterLevelToHeight,
@@ -105,6 +106,8 @@ const DrainView = memo(function DrainView({
   decisionLevel,
   decisionScore,
   incident,
+  fleet,
+  fleetUnassigned,
   selected,
   compact,
   onSelect
@@ -121,6 +124,15 @@ const DrainView = memo(function DrainView({
   const decisionBarHeight = (decisionScore != null ? Math.max(0, Math.min(100, decisionScore)) : 0) / 100 * 1.3;
   const riskBarHeight = (riskScore != null ? Math.max(0, Math.min(100, riskScore)) : 0) / 100 * 1.3;
   const incidentColor = incident ? LEVEL_COLOR[incident.severity] || "#ef4444" : null;
+
+  // Fleet overlay (Update #19) — advisory only. Cyan = a robot is
+  // recommended for this task; red = the task is unassigned.
+  const fleetRecommended = Boolean(fleet && fleet.recommendedRobotId != null);
+  const fleetColor = fleetUnassigned
+    ? "#ef4444"
+    : fleetRecommended
+      ? "#22d3ee"
+      : null;
 
   return (
     <group
@@ -228,6 +240,14 @@ const DrainView = memo(function DrainView({
         </>
       )}
 
+      {/* fleet-optimization advisory ring (Update #19) */}
+      {fleetColor && (
+        <mesh position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[2.72, 2.96, 48]} />
+          <meshBasicMaterial color={fleetColor} transparent opacity={0.85} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+
       {/* selection highlight ring */}
       {selected && (
         <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -246,6 +266,17 @@ const DrainView = memo(function DrainView({
             {incident && (
               <div style={{ color: incidentColor, fontWeight: 600 }}>
                 🚑 {incident.severity} · {incident.status}
+              </div>
+            )}
+            {fleetRecommended && (
+              <div style={{ color: "#22d3ee", fontWeight: 600 }}>
+                ↳ {fleet.recommendedRobotName || `robot ${fleet.recommendedRobotId}`}
+                {fleet.chargingRequired ? " (charge first)" : ""}
+              </div>
+            )}
+            {fleetUnassigned && (
+              <div style={{ color: "#f87171", fontWeight: 600 }}>
+                ⚠ unassigned{fleetUnassigned.reason ? ` · ${fleetUnassigned.reason}` : ""}
               </div>
             )}
           </div>
@@ -337,6 +368,7 @@ const RobotView = memo(function RobotView({
   name,
   status,
   battery,
+  fleetInfo,
   selected,
   compact,
   onSelect
@@ -345,6 +377,12 @@ const RobotView = memo(function RobotView({
   const batt = battery;
   const battColor = batteryColor(batt);
   const battWidth = batt != null ? Math.max(0.06, (Math.min(100, Math.max(0, batt)) / 100) * 0.66) : 0.06;
+
+  // Fleet overlay (Update #19) — advisory only, never a dispatch.
+  const availability = fleetInfo ? fleetInfo.availabilityState : null;
+  const availabilityColor = AVAILABILITY_COLOR[availability] || null;
+  const recommendedDrainId = fleetInfo ? fleetInfo.recommendedDrainId : null;
+  const chargingRequired = Boolean(fleetInfo && fleetInfo.chargingRequired);
 
   return (
     <group
@@ -395,6 +433,20 @@ const RobotView = memo(function RobotView({
         <cylinderGeometry args={[0.02, 0.02, 0.22, 6]} />
         <meshStandardMaterial color="#94a3b8" />
       </mesh>
+      {/* fleet availability ring (Update #19) */}
+      {availabilityColor && (
+        <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.84, 0.99, 32]} />
+          <meshBasicMaterial color={availabilityColor} transparent opacity={0.9} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+      {/* recommended-task highlight ring (advisory only) */}
+      {recommendedDrainId != null && (
+        <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[1.42, 1.62, 40]} />
+          <meshBasicMaterial color="#22d3ee" transparent opacity={0.85} side={THREE.DoubleSide} />
+        </mesh>
+      )}
       {selected && (
         <mesh position={[0, 0.35, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[1.0, 1.32, 32]} />
@@ -409,6 +461,17 @@ const RobotView = memo(function RobotView({
               {status}
               {batt != null ? ` · ${Math.round(batt)}%` : ""}
             </div>
+            {availability && (
+              <div style={{ color: availabilityColor || "#94a3b8", fontWeight: 600 }}>
+                {availability}
+                {chargingRequired ? " · charge required" : ""}
+              </div>
+            )}
+            {recommendedDrainId != null && (
+              <div style={{ color: "#22d3ee", fontWeight: 600 }}>
+                ↳ suggested for drain {recommendedDrainId}
+              </div>
+            )}
           </div>
         </Html>
       )}
@@ -682,6 +745,14 @@ function DigitalTwin({
     [activeIncidentByDrain, incidentList]
   );
 
+  // Fleet optimization overlay (Update #19) — additive + advisory.
+  // Missing fleet data simply draws no markers (graceful degrade).
+  const fleet = data && data.fleet ? data.fleet : null;
+  const fleetByDrain = fleet && fleet.byDrain ? fleet.byDrain : EMPTY_OBJECT;
+  const fleetUnassignedByDrain =
+    fleet && fleet.unassignedByDrain ? fleet.unassignedByDrain : EMPTY_OBJECT;
+  const fleetByRobot = fleet && fleet.byRobot ? fleet.byRobot : EMPTY_OBJECT;
+
   const fusedDrains = useMemo(
     () => fuseDrains(drains, live.byDrain, decisions, incidentsByDrain),
     [drains, live.byDrain, decisions, incidentsByDrain]
@@ -774,6 +845,8 @@ function DigitalTwin({
               decisionLevel={drain.decisionLevel}
               decisionScore={drain.decisionScore}
               incident={drain.incident}
+              fleet={fleetByDrain[drain.id] || null}
+              fleetUnassigned={fleetUnassignedByDrain[drain.id] || null}
               selected={selected && selected.type === "drain" && Number(selected.id) === Number(drain.id)}
               compact={compact}
               onSelect={onSelect}
@@ -817,6 +890,7 @@ function DigitalTwin({
               name={robot.name}
               status={robot.status}
               battery={robot.batteryLevel}
+              fleetInfo={fleetByRobot[robot.id] || null}
               selected={selected && selected.type === "robot" && Number(selected.id) === Number(robot.id)}
               compact={compact}
               onSelect={onSelect}

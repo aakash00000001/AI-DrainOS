@@ -12,6 +12,7 @@
 //   GET /api/dashboard/robot-routes
 //   GET /api/dashboard/decisions
 //   GET /api/incidents/active          (additive, Update #18)
+//   GET /api/fleet-optimization        (additive, Update #19)
 //   GET /api/predictions/risk/:id      (on-demand, drain detail)
 //   GET /api/predictions/forecast/:id  (on-demand)
 //   GET /api/predictions/maintenance/:id (on-demand)
@@ -35,7 +36,8 @@ import {
   matchSensorsToDrains,
   buildMetrics,
   normalizeIncidentSignal,
-  buildActiveIncidentByDrain
+  buildActiveIncidentByDrain,
+  normalizeFleetOptimization
 } from "./digitalTwinUtils.mjs";
 
 function coordinatePoints(drains, robots, stations) {
@@ -54,16 +56,25 @@ function coordinatePoints(drains, robots, stations) {
  * origin is derived from the loaded project coordinates.
  */
 export async function loadDigitalTwinData() {
-  const [drainsRes, sensorsRes, robotsRes, stationsRes, routesRes, decisionsRes, incidentsRes] =
-    await Promise.allSettled([
-      axios.get(`${API_URL}/drains`),
-      axios.get(`${API_URL}/sensors`),
-      axios.get(`${API_URL}/robots`),
-      axios.get(`${API_URL}/charging-stations`),
-      axios.get(`${API_URL}/dashboard/robot-routes`),
-      axios.get(`${API_URL}/dashboard/decisions`),
-      axios.get(`${API_URL}/incidents/active`)
-    ]);
+  const [
+    drainsRes,
+    sensorsRes,
+    robotsRes,
+    stationsRes,
+    routesRes,
+    decisionsRes,
+    incidentsRes,
+    fleetRes
+  ] = await Promise.allSettled([
+    axios.get(`${API_URL}/drains`),
+    axios.get(`${API_URL}/sensors`),
+    axios.get(`${API_URL}/robots`),
+    axios.get(`${API_URL}/charging-stations`),
+    axios.get(`${API_URL}/dashboard/robot-routes`),
+    axios.get(`${API_URL}/dashboard/decisions`),
+    axios.get(`${API_URL}/incidents/active`),
+    axios.get(`${API_URL}/fleet-optimization`)
+  ]);
 
   const rawDrains = drainsRes.status === "fulfilled" ? asArray(drainsRes.value.data) : [];
   const rawSensors = sensorsRes.status === "fulfilled" ? asArray(sensorsRes.value.data) : [];
@@ -167,9 +178,20 @@ export async function loadDigitalTwinData() {
 
   const activeIncidentByDrain = buildActiveIncidentByDrain(incidents);
 
+  // Fleet optimization overlay (Update #19) — additive advisory.
+  // A missing/failed endpoint degrades to fleet = null and the twin
+  // simply draws no fleet markers.
+  const fleet =
+    fleetRes.status === "fulfilled"
+      ? normalizeFleetOptimization(fleetRes.value.data)
+      : null;
+
   const metrics = buildMetrics(drains, robots, routes, {
     decisionsTotal: topPriority.length,
     activeIncidents: Object.keys(activeIncidentByDrain).length,
+    fleetActiveTasks: fleet ? fleet.summary.activeTasks : 0,
+    fleetUnassignedTasks: fleet ? fleet.summary.unassignedTasks : 0,
+    fleetAvailableRobots: fleet ? fleet.summary.availableRobots : 0,
     dataSources: {
       drains: drainsRes.status === "fulfilled",
       sensors: sensorsRes.status === "fulfilled",
@@ -177,7 +199,8 @@ export async function loadDigitalTwinData() {
       chargingStations: stationsRes.status === "fulfilled",
       routes: routesRes.status === "fulfilled",
       decisions: decisionsRes.status === "fulfilled",
-      incidents: incidentsRes.status === "fulfilled"
+      incidents: incidentsRes.status === "fulfilled",
+      fleetOptimization: fleetRes.status === "fulfilled"
     }
   });
 
@@ -188,7 +211,8 @@ export async function loadDigitalTwinData() {
     stationsRes.status !== "fulfilled" && "stations",
     routesRes.status !== "fulfilled" && "routes",
     decisionsRes.status !== "fulfilled" && "decisions",
-    incidentsRes.status !== "fulfilled" && "incidents"
+    incidentsRes.status !== "fulfilled" && "incidents",
+    fleetRes.status !== "fulfilled" && "fleetOptimization"
   ].filter(Boolean);
 
   return {
@@ -201,6 +225,7 @@ export async function loadDigitalTwinData() {
     decisionsByDrain,
     incidents,
     activeIncidentByDrain,
+    fleet,
     origin,
     metrics,
     loadError

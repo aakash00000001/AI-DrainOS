@@ -17,6 +17,8 @@ import AIDecisionPanel from "./components/AIDecisionPanel";
 import RobotRoutePlanner from "./components/RobotRoutePlanner";
 import EmergencyResponsePanel from "./components/EmergencyResponsePanel";
 import IncidentsPage from "./components/IncidentsPage";
+import FleetOptimizationPanel from "./components/FleetOptimizationPanel";
+import FleetOptimizationPage from "./components/FleetOptimizationPage";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -136,6 +138,22 @@ function App() {
 
     });
 
+    socket.on("fleetOptimizationUpdate", (payload) => {
+
+      if (!payload || !payload.summary) return;
+
+      const { summary, status } = payload;
+
+      // Only surface an actionable alert (tasks that could not be
+      // assigned); routine recomputations stay silent to avoid noise.
+      if (summary.unassigned_tasks > 0 || status === "NO_ELIGIBLE_ROBOT") {
+        toast.warning(
+          `🚚 Fleet: ${summary.assigned_tasks}/${summary.active_tasks} tasks assigned · ${summary.unassigned_tasks} unassigned`
+        );
+      }
+
+    });
+
     socket.on("dashboardUpdate", (data) => {
 
       setDashboard(data);
@@ -153,6 +171,7 @@ function App() {
       socket.off("visionInspectionUpdate");
       socket.off("decisionUpdate");
       socket.off("incidentUpdate");
+      socket.off("fleetOptimizationUpdate");
 
     };
 
@@ -282,6 +301,10 @@ function App() {
             onOpen={() => handleNavigate("incidents")}
           />
 
+          <FleetOptimizationPanel
+            onOpen={() => handleNavigate("fleetoptimization")}
+          />
+
           <DigitalTwinPreview
             onOpen={() => handleNavigate("digitaltwin")}
           />
@@ -364,6 +387,24 @@ function App() {
           <h2>🚑 Emergency Response & Incidents</h2>
 
           <IncidentsPage />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Fleet Optimization (Update #19)
+    if (activePage === "fleetoptimization") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>🚚 Fleet Optimization</h2>
+
+          <FleetOptimizationPage />
 
         </div>
 

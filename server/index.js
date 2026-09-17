@@ -9,6 +9,7 @@ const { assignMission } = require("./services/missionEngine");
 const { startMqttService } = require("./services/mqttService");
 const socketHub = require("./services/socketHub");
 const incidentService = require("./services/incidentService");
+const fleetOptimizationService = require("./services/fleetOptimizationService");
 
 require("dotenv").config();
 
@@ -574,6 +575,20 @@ setInterval(async () => {
 
       ...(incidentCounts ? { incidents: { counts: incidentCounts } } : {})
     });
+
+    // ==================================================
+    // 11. FLEET OPTIMIZATION (advisory)
+    // ==================================================
+    // Recomputes fleet recommendations and emits
+    // `fleetOptimizationUpdate` ONLY when the recommendation-relevant
+    // state actually changed (signature-guarded inside the service).
+    // Best-effort: the live loop must never break here.
+
+    try {
+      await fleetOptimizationService.evaluateAndEmitFleetOptimization();
+    } catch (fleetErr) {
+      console.log("⚠️ fleetOptimizationUpdate skipped:", fleetErr.message);
+    }
 
   } catch (err) {
     console.log("========== LIVE LOOP ERROR ==========");

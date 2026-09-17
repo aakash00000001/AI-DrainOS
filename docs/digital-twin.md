@@ -191,7 +191,7 @@ No new server events were added; the backend never knew this feature exists.
 
 ## 9. Tests
 
-`server/tests/digitalTwin.test.js` (25 tests, `npm test` in `server/`):
+`server/tests/digitalTwin.test.js` (36 tests, `npm test` in `server/`):
 
 - `safeWaterLevel` clamping and honesty on bad input.
 - `levelFromScore` boundaries (25/50/75) and `normalizeLevel`.
@@ -202,7 +202,12 @@ No new server events were added; the backend never knew this feature exists.
 - Every reducer action (`SET_DATA`, `SENSOR_UPDATE`, `RISK_UPDATE`,
   `FORECAST_UPDATE`, `MAINTENANCE_UPDATE`, `VISION_UPDATE`,
   `DECISION_UPDATE`, `ROUTE_UPDATE`, `DASHBOARD_UPDATE`, unknown → no-op).
-- Read-only API shape checks for all six consumed endpoints, including the
+- The additive overlay reducers: `INCIDENT_UPDATE` (Update #18) and
+  `FLEET_OPTIMIZATION_UPDATE` (Update #19, invalid payload → no-op).
+- `normalizeIncidentSignal` / `buildActiveIncidentByDrain` and
+  `normalizeFleetOptimization` (byRobot / byDrain / unassigned maps).
+- Read-only API shape checks for the consumed endpoints (including
+  `/api/fleet-optimization`), including the
   decisions↔`levelFromScore` banding consistency assertion.
 
 ---

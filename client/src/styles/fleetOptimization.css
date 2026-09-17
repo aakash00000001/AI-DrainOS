@@ -1,0 +1,406 @@
+/* ------------------------------------------------------------
+   Fleet Optimization — Predictive Resource & Robot Fleet
+   Update #19. Advisory-only recommendations.
+------------------------------------------------------------ */
+
+.fleet-shell,
+.fleet-page {
+  width: 100%;
+}
+
+.fleet-shell-header,
+.fleet-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.fleet-shell-header h2,
+.fleet-page-header h2 {
+  margin: 0;
+}
+
+.fleet-subtitle {
+  color: #64748b;
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.fleet-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fleet-updated {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* Status badge */
+.fleet-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.fleet-status-ok {
+  background: #f6ffed;
+  color: #389e0d;
+  border: 1px solid #b7eb8f;
+}
+.fleet-status-idle {
+  background: #f5f5f5;
+  color: #595959;
+  border: 1px solid #d9d9d9;
+}
+.fleet-status-warn {
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1px solid #ffd591;
+}
+.fleet-status-bad {
+  background: #fff1f0;
+  color: #cf1322;
+  border: 1px solid #ffa39e;
+}
+
+/* Stat strip */
+.fleet-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.fleet-stat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  border-left: 4px solid #cbd5e1;
+}
+
+.fleet-stat svg {
+  color: #64748b;
+  font-size: 20px;
+}
+
+.fleet-stat strong {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.fleet-stat span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.fleet-stat.stat-active {
+  border-left-color: #1677ff;
+}
+.fleet-stat.stat-charge {
+  border-left-color: #722ed1;
+}
+.fleet-stat.stat-warn {
+  border-left-color: #faad14;
+}
+.fleet-stat.stat-danger {
+  border-left-color: #ff4d4f;
+}
+
+.fleet-stat.stat-active svg,
+.fleet-stat.stat-active strong {
+  color: #1677ff;
+}
+.fleet-stat.stat-charge svg,
+.fleet-stat.stat-charge strong {
+  color: #722ed1;
+}
+.fleet-stat.stat-warn svg,
+.fleet-stat.stat-warn strong {
+  color: #d48806;
+}
+.fleet-stat.stat-danger svg,
+.fleet-stat.stat-danger strong {
+  color: #ff4d4f;
+}
+
+/* Recommendations */
+.fleet-reco-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.fleet-reco {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.07);
+  padding: 14px 16px;
+  border-left: 4px solid #1677ff;
+}
+
+.fleet-reco-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.fleet-task-id {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.fleet-priority {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.fleet-reco-line {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fleet-reco-line svg {
+  color: #1677ff;
+}
+
+.fleet-reco-meta {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fleet-reco-meta svg {
+  color: #94a3b8;
+}
+
+/* Severity badges (shared look with incidents) */
+.fleet-sev {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #fff;
+}
+
+/* Alerts / empty / warnings */
+.fleet-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cf1322;
+  background: #fff1f0;
+  border: 1px dashed #ffa39e;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 8px 0 14px;
+}
+
+.fleet-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #52c41a;
+  background: #f6ffed;
+  border: 1px dashed #b7eb8f;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 8px 0 14px;
+}
+
+.fleet-warnings {
+  list-style: none;
+  margin: 8px 0 14px;
+  padding: 0;
+}
+
+.fleet-warnings li {
+  font-size: 12px;
+  color: #8c6d1f;
+  background: #fffbe6;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.fleet-warnings-wide {
+  margin-bottom: 18px;
+}
+
+.fleet-disclaimer {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 14px 0 0;
+}
+
+/* Layout */
+.fleet-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+@media (min-width: 1080px) {
+  .fleet-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.fleet-table-card {
+  margin-bottom: 0;
+}
+
+.fleet-table-card .table-header h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.fleet-table-scroll {
+  overflow-x: auto;
+}
+
+.fleet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fleet-table th {
+  text-align: left;
+  padding: 12px 10px;
+  border-bottom: 2px solid #eef2f7;
+  color: #64748b;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.fleet-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.fleet-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.fleet-no-rows {
+  color: #94a3b8;
+  text-align: center;
+  padding: 28px !important;
+}
+
+.fleet-muted {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* Availability pills */
+.avail-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.avail-available {
+  background: #f6ffed;
+  color: #389e0d;
+}
+.avail-busy {
+  background: #e6f7ff;
+  color: #0958d9;
+}
+.avail-charging {
+  background: #f9f0ff;
+  color: #531dab;
+}
+.avail-low {
+  background: #fff7e6;
+  color: #d46b08;
+}
+.avail-offline {
+  background: #f5f5f5;
+  color: #595959;
+}
+.avail-unavailable {
+  background: #fff1f0;
+  color: #a8071a;
+}
+
+/* Route pills */
+.route-direct {
+  background: #f6ffed;
+  color: #389e0d;
+}
+.route-charge {
+  background: #f9f0ff;
+  color: #531dab;
+}
+.route-infeasible {
+  background: #fff1f0;
+  color: #a8071a;
+}
+
+/* Recommendation state */
+.fleet-reco-state {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.state-recommended {
+  background: #f6ffed;
+  color: #389e0d;
+}
+.state-unassigned {
+  background: #fff1f0;
+  color: #a8071a;
+}
+.state-pending {
+  background: #f5f5f5;
+  color: #595959;
+}
+
+.fleet-reason {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a8071a;
+}

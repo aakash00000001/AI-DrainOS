@@ -32,6 +32,7 @@ const INITIAL_STATE = {
   decisionsByDrain: {},
   incidents: [],
   activeIncidentByDrain: {},
+  fleet: null,
   byDrain: {},
   bySensor: {}
 };
@@ -82,6 +83,9 @@ function DigitalTwinPreview({ onOpen }) {
     const onIncident = (payload) => {
       if (payload && payload.incident) dispatch({ type: "INCIDENT_UPDATE", payload });
     };
+    const onFleet = (payload) => {
+      if (payload) dispatch({ type: "FLEET_OPTIMIZATION_UPDATE", payload });
+    };
 
     socket.on("sensorUpdate", forward("SENSOR_UPDATE"));
     socket.on("floodRiskUpdate", forward("RISK_UPDATE"));
@@ -92,6 +96,7 @@ function DigitalTwinPreview({ onOpen }) {
     socket.on("robotRouteUpdate", forward("ROUTE_UPDATE"));
     socket.on("dashboardUpdate", onDashboard);
     socket.on("incidentUpdate", onIncident);
+    socket.on("fleetOptimizationUpdate", onFleet);
 
     return () => {
       socket.off("sensorUpdate");
@@ -103,6 +108,7 @@ function DigitalTwinPreview({ onOpen }) {
       socket.off("robotRouteUpdate");
       socket.off("dashboardUpdate");
       socket.off("incidentUpdate");
+      socket.off("fleetOptimizationUpdate");
     };
   }, []);
 
@@ -112,9 +118,16 @@ function DigitalTwinPreview({ onOpen }) {
         state.drains,
         state.byDrain,
         state.decisionsByDrain || {},
-        state.activeIncidentByDrain || {}
+        state.activeIncidentByDrain || {},
+        state.fleet ? state.fleet.byDrain : {}
       ),
-    [state.drains, state.byDrain, state.decisionsByDrain, state.activeIncidentByDrain]
+    [
+      state.drains,
+      state.byDrain,
+      state.decisionsByDrain,
+      state.activeIncidentByDrain,
+      state.fleet
+    ]
   );
 
   const live = useMemo(
@@ -149,6 +162,12 @@ function DigitalTwinPreview({ onOpen }) {
           </span>
           <span>
             Routes <b>{metrics.activeRoutes ?? 0}</b>
+          </span>
+          <span>
+            Unassigned{" "}
+            <b style={{ color: metrics.fleetUnassignedTasks > 0 ? "#dc2626" : "#16a34a" }}>
+              {state.fleet ? state.fleet.summary.unassignedTasks : metrics.fleetUnassignedTasks ?? 0}
+            </b>
           </span>
         </div>
         <button className="dt-btn primary" onClick={onOpen} disabled={loading}>

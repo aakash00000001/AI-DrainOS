@@ -271,7 +271,7 @@ The Digital Twin consumes `GET /api/incidents/active` in its existing aggregatio
 - `server/tests/incidents.test.js` — 20 tests for the REST API + socket behaviour.
 - 5 additive Digital Twin incident tests in `server/tests/digitalTwin.test.js`.
 - Run the full backend suite (from `server/`): `npm test`
-  (`node --test --test-concurrency=1 "tests/*.test.js"`). Total: **284 tests**.
+  (`node --test --test-concurrency=1 "tests/*.test.js"`). Total: **329 tests**.
 
 ---
 

@@ -530,3 +530,179 @@ test("utils: fuseDrains attaches the active incident without touching risk/decis
   assert.equal(fused[0].decisionLevel, null);
   assert.equal(fused[0].waterLevel, 20);
 });
+
+// ============================================================
+// 4. Additive fleet-optimization overlay (Update #19)
+//
+// ADVISORY ONLY: the overlay never assigns/moves robots and simply
+// is absent (fleet = null) when the API is unavailable.
+// ============================================================
+
+test("fleet: normalizeAvailabilityState canonicalizes labels and rejects unknown values", () => {
+  assert.equal(u.normalizeAvailabilityState("available"), "AVAILABLE");
+  assert.equal(u.normalizeAvailabilityState("LOW_BATTERY"), "LOW_BATTERY");
+  assert.equal(u.normalizeAvailabilityState("charging"), "CHARGING");
+  assert.equal(u.normalizeAvailabilityState("weird"), null);
+  assert.equal(u.normalizeAvailabilityState(null), null);
+});
+
+test("fleet: normalizeFleetOptimization builds byRobot / byDrain / unassigned maps from a real payload", () => {
+  const fleet = u.normalizeFleetOptimization({
+    status: "OK",
+    generated_at: "2026-01-01T00:00:00Z",
+    disclaimer: "advisory",
+    summary: {
+      total_robots: 5,
+      available_robots: 2,
+      busy_robots: 1,
+      charging_robots: 1,
+      low_battery_robots: 1,
+      offline_robots: 0,
+      unavailable_robots: 0,
+      active_tasks: 2,
+      assigned_tasks: 1,
+      unassigned_tasks: 1,
+      recommended_assignments: 1,
+      fleet_utilization: 40,
+      battery_risk_count: 2,
+      charging_requirement_count: 2
+    },
+    robots: [
+      { robot_id: 3, availability_state: "available", battery_level: 63, charging_station_id: null },
+      { robot_id: 2, availability_state: "Busy", battery_level: 64 }
+    ],
+    tasks: [
+      {
+        task_id: "incident:1",
+        drain_id: 5,
+        incident_id: 1,
+        severity: "CRITICAL",
+        priority_score: 90,
+        priority_status: "OK",
+        recommendation_status: "RECOMMENDED",
+        recommended_robot_id: 3,
+        recommended_robot_name: "Robot-B1",
+        route_mode: "DIRECT"
+      },
+      {
+        task_id: "drain:7",
+        drain_id: 7,
+        severity: "HIGH",
+        priority_score: 60,
+        recommendation_status: "UNASSIGNED"
+      }
+    ],
+    recommendations: [
+      { task_id: "incident:1", drain_id: 5, robot_id: 3, robot_name: "Robot-B1", route_mode: "DIRECT", charging_required: false, estimated_travel_time: 120 }
+    ],
+    unassigned: [
+      {
+        task_id: "drain:7",
+        drain_id: 7,
+        severity: "HIGH",
+        priority_score: 60,
+        reason: "NO_ELIGIBLE_ROBOT",
+        required_action: "Free up a robot."
+      }
+    ],
+    warnings: ["1 task(s) could not be assigned to any eligible robot."]
+  });
+
+  assert.equal(fleet.status, "OK");
+  assert.equal(fleet.summary.activeTasks, 2);
+  assert.equal(fleet.summary.unassignedTasks, 1);
+
+  assert.equal(fleet.byDrain[5].recommendedRobotId, 3);
+  assert.equal(fleet.byDrain[5].chargingRequired, false);
+  assert.equal(fleet.byDrain[5].estimatedTravelTime, 120);
+
+  // Recommendation is mirrored onto the robot for scene highlighting.
+  assert.equal(fleet.byRobot[3].recommendedDrainId, 5);
+  assert.equal(fleet.byRobot[3].availabilityState, "AVAILABLE");
+  assert.equal(fleet.byRobot[3].recommendedRouteMode, "DIRECT");
+
+  assert.equal(fleet.unassignedByDrain[7].reason, "NO_ELIGIBLE_ROBOT");
+  assert.equal(fleet.byDrain[7].recommendationStatus, "UNASSIGNED");
+  assert.deepEqual(fleet.criticalUnassignedDrainIds, []);
+
+  assert.equal(u.normalizeFleetOptimization(null), null);
+  assert.equal(u.normalizeFleetOptimization("nope"), null);
+});
+
+test("fleet: critical unassigned tasks are surfaced honestly", () => {
+  const fleet = u.normalizeFleetOptimization({
+    status: "NO_ELIGIBLE_ROBOT",
+    robots: [],
+    tasks: [],
+    recommendations: [],
+    unassigned: [
+      { task_id: "incident:9", drain_id: 5, severity: "CRITICAL", priority_score: 88, reason: "NO_ELIGIBLE_ROBOT" }
+    ]
+  });
+  assert.deepEqual(fleet.criticalUnassignedDrainIds, [5]);
+});
+
+test("reducer: FLEET_OPTIMIZATION_UPDATE stores the overlay and ignores invalid payloads", () => {
+  const payload = {
+    status: "OK",
+    summary: { total_robots: 1, active_tasks: 1, assigned_tasks: 1, unassigned_tasks: 0 },
+    robots: [{ robot_id: 1, availability_state: "AVAILABLE", battery_level: 80 }],
+    tasks: [],
+    recommendations: [],
+    unassigned: []
+  };
+
+  const state = u.digitalTwinReducer({ fleet: null }, {
+    type: "FLEET_OPTIMIZATION_UPDATE",
+    payload
+  });
+  assert.equal(state.fleet.status, "OK");
+  assert.equal(state.fleet.byRobot[1].availabilityState, "AVAILABLE");
+
+  const unchanged = { fleet: null };
+  assert.equal(
+    u.digitalTwinReducer(unchanged, { type: "FLEET_OPTIMIZATION_UPDATE", payload: null }),
+    unchanged,
+    "an invalid payload must not clobber existing fleet state"
+  );
+});
+
+test("utils: fuseDrains attaches the fleet advisory without touching risk/decision", () => {
+  const fused = u.fuseDrains(
+    [{ id: 5, status: "Warning", waterLevel: 30 }],
+    {},
+    {},
+    {},
+    {
+      5: {
+        drainId: 5,
+        taskId: "incident:1",
+        recommendedRobotId: 3,
+        recommendedRobotName: "Robot-B1",
+        routeMode: "DIRECT",
+        recommendationStatus: "RECOMMENDED"
+      }
+    }
+  );
+
+  assert.equal(fused[0].fleet.recommendedRobotId, 3);
+  assert.equal(fused[0].riskLevel, null);
+  assert.equal(fused[0].decisionLevel, null);
+  assert.equal(fused[0].waterLevel, 30);
+});
+
+test("GET /api/fleet-optimization is consumable by the Digital Twin overlay", async () => {
+  const res = await request(app).get("/api/fleet-optimization");
+  assert.equal(res.status, 200);
+  assert.ok(res.body);
+  assert.ok(res.body.summary);
+
+  const overlay = u.normalizeFleetOptimization(res.body);
+  assert.ok(overlay);
+  assert.equal(typeof overlay.summary.totalRobots, "number");
+  assert.equal(
+    overlay.summary.assignedTasks + overlay.summary.unassignedTasks,
+    overlay.summary.activeTasks,
+    "every active task is either assigned or unassigned"
+  );
+});

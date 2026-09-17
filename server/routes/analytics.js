@@ -9,6 +9,7 @@ const visionService = require("../services/drainVisionService");
 const decisionEngine = require("../services/decisionEngine");
 const robotPathPlanning = require("../services/robotPathPlanningService");
 const incidentService = require("../services/incidentService");
+const fleetOptimizationService = require("../services/fleetOptimizationService");
 
 router.get("/", async (req, res) => {
 
@@ -76,6 +77,16 @@ router.get("/", async (req, res) => {
       console.log("⚠️ Incident analytics skipped:", incidentErr.message);
     }
 
+    // Fleet optimization analytics are additive and best-effort.
+    // Advisory only; never dispatches robots.
+    let fleetAnalytics = null;
+
+    try {
+      fleetAnalytics = await fleetOptimizationService.getAnalytics();
+    } catch (fleetErr) {
+      console.log("⚠️ Fleet analytics skipped:", fleetErr.message);
+    }
+
     res.json({
       total_cleanings: Number(totalCleanings.rows[0].count),
       total_missions: Number(totalMissions.rows[0].count),
@@ -138,6 +149,22 @@ router.get("/", async (req, res) => {
         : null,
       incident_average_resolution_minutes: incidentAnalytics
         ? incidentAnalytics.average_resolution_minutes
+        : null,
+      fleet_status: fleetAnalytics ? fleetAnalytics.status : null,
+      fleet_total_robots: fleetAnalytics ? fleetAnalytics.total_robots : 0,
+      fleet_available_robots: fleetAnalytics ? fleetAnalytics.available_robots : 0,
+      fleet_busy_robots: fleetAnalytics ? fleetAnalytics.busy_robots : 0,
+      fleet_charging_robots: fleetAnalytics ? fleetAnalytics.charging_robots : 0,
+      fleet_low_battery_robots: fleetAnalytics ? fleetAnalytics.low_battery_robots : 0,
+      fleet_utilization: fleetAnalytics ? fleetAnalytics.robot_utilization : null,
+      fleet_active_tasks: fleetAnalytics ? fleetAnalytics.active_tasks : 0,
+      fleet_assigned_tasks: fleetAnalytics ? fleetAnalytics.assigned_tasks : 0,
+      fleet_unassigned_tasks: fleetAnalytics ? fleetAnalytics.unassigned_task_count : 0,
+      fleet_assignment_coverage: fleetAnalytics
+        ? fleetAnalytics.task_assignment_coverage
+        : null,
+      fleet_average_response_minutes: fleetAnalytics
+        ? fleetAnalytics.average_estimated_response_minutes
         : null
     });
 
@@ -363,6 +390,25 @@ router.get("/robot-routes", async (req, res) => {
       disclaimer: summary.disclaimer,
       generated_at: summary.generatedAt
     });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/fleet-optimization - Fleet metrics
+// --------------------------------------------------
+// Robot availability mix, task assignment coverage, average
+// estimated response time and unassigned reasons. Derived from
+// live state; averages are null when they cannot be computed.
+// Advisory only. Additive.
+// --------------------------------------------------
+
+router.get("/fleet-optimization", async (req, res) => {
+  try {
+    const data = await fleetOptimizationService.getAnalytics();
+    res.json(data);
   } catch (err) {
     console.log(err);
     res.status(500).json({ error: "Analytics Error" });

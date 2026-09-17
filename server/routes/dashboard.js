@@ -9,6 +9,7 @@ const decisionEngine = require("../services/decisionEngine");
 const robotPathPlanning = require("../services/robotPathPlanningService");
 const mqttService = require("../services/mqttService");
 const incidentService = require("../services/incidentService");
+const fleetOptimizationService = require("../services/fleetOptimizationService");
 
 router.get("/", async (req, res) => {
   try {
@@ -44,11 +45,33 @@ router.get("/", async (req, res) => {
       console.log("⚠️ Dashboard incident summary skipped:", incidentErr.message);
     }
 
+    // Fleet optimization — additive + best-effort (mirrors the
+    // incidents pattern). Advisory only; never dispatches robots.
+    let fleet = {
+      status: "UNAVAILABLE",
+      totalRobots: 0,
+      availableRobots: 0,
+      busyRobots: 0,
+      chargingRobots: 0,
+      lowBatteryRobots: 0,
+      activeTasks: 0,
+      unassignedTasks: 0,
+      recommendedAssignments: 0,
+      fleetUtilization: null
+    };
+
+    try {
+      fleet = await fleetOptimizationService.getDashboardSummary();
+    } catch (fleetErr) {
+      console.log("⚠️ Dashboard fleet summary skipped:", fleetErr.message);
+    }
+
     res.json({
       totalDrains: Number(totalDrains.rows[0].count),
       activeRobots: Number(activeRobots.rows[0].count),
       criticalAlerts: Number(criticalAlerts.rows[0].count),
-      incidents
+      incidents,
+      fleet
     });
 
   } catch (err) {
@@ -242,6 +265,24 @@ router.get("/robot-routes", async (req, res) => {
   try {
     const summary = await robotPathPlanning.getAllRoutes();
 
+    res.json(summary);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/dashboard/fleet - Fleet optimization summary
+// --------------------------------------------------
+// Additive summary for the dashboard fleet panel: robot
+// availability mix, task assignment coverage and fleet
+// utilization. Advisory only. Existing endpoints untouched.
+// --------------------------------------------------
+
+router.get("/fleet", async (req, res) => {
+  try {
+    const summary = await fleetOptimizationService.getSummary();
     res.json(summary);
   } catch (err) {
     console.error(err);

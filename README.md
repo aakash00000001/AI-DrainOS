@@ -87,6 +87,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **Intelligent Robot Path Planning & Route Optimization**: An explainable, battery-aware planning layer for high/critical drains. It selects the best available robot (never Charging or on an active mission) using a deterministic score over distance, battery and battery sufficiency, then plans a coordinate-space route — `START → TARGET` (direct) or `START → CHARGING_STATION → TARGET` when the direct route is not feasible — with cumulative distance, time and battery estimates and an honest `NO_ROBOT_AVAILABLE` state. Live `robotRouteUpdate` events, a `RobotRoutePlanner` dashboard panel, and route polylines on the drain map. Reuses the existing movement-loop constants; `missionEngine.js` and the robot movement loop are untouched.
 - **Interactive 3D Digital Twin**: An additive, read-only 3D visualization layer (`three.js` + `@react-three/fiber` + `@react-three/drei`) rendered as a new **Digital Twin** page plus a compact live preview on the Dashboard. It aggregates the **existing** REST APIs and consumes the **existing** single Socket.IO connection to show drains, sensors, robots, charging stations and planner routes — with real flood-risk rings, separate AI-decision bars, live sensor water levels, click-to-inspect details (lazy per-drain risk/forecast/maintenance/decision/vision calls) and a non-3D data list fallback. It never writes to the database and never adds a second socket connection or movement loop. Coordinates use a documented visualization grid (not survey-grade GIS). See [docs/digital-twin.md](docs/digital-twin.md).
 - **Autonomous Emergency Response & Incident Intelligence**: A real, auditable incident lifecycle (`OPEN → ACKNOWLEDGED → RESPONDING → RESOLVED`) for high-stakes events. Incidents are created from **real** CRITICAL AI decisions (fire-and-forget hook in the MQTT pipeline), from other real engines, or manually; a CRITICAL incident automatically reuses the **existing** robot path planner (never a duplicate planner) and honestly records `PLANNED`, `MANUAL`, `NO_ROBOT_AVAILABLE` or `NO_COORDINATES`. One active incident per drain (partial unique index), guarded transitions, a timeline built **only** from stored timestamps, dashboard/analytics overlays, live `incidentUpdate` events, an Emergency Response panel, a dedicated Incidents page, and an additive Digital Twin beacon. See [docs/incidents.md](docs/incidents.md).
+- **Predictive Resource & Robot Fleet Optimization**: An **advisory** fleet-level layer (`server/services/fleetOptimizationService.js`) that reads the real robots/drains/incidents/decisions and produces explainable robot-to-task recommendations ranked by a documented priority score (decision 0.60 · severity 0.20 · age 0.10 · urgency 0.10) and candidate score (distance 35 · battery 25 · ETA 20 · availability 10 · feasibility 10), with honest availability states (`AVAILABLE`/`BUSY`/`CHARGING`/`LOW_BATTERY`/`OFFLINE`/`UNAVAILABLE`) and battery-aware route modes (`DIRECT`/`CHARGE_THEN_TASK`/`NO_FEASIBLE_ROUTE`). It **never** assigns or moves robots — `missionEngine.js` stays the authority — and reuses the existing decision engine + path planner rather than duplicating them. Read-only REST (`/api/fleet-optimization`), additive dashboard/analytics fields, a signature-guarded live `fleetOptimizationUpdate` event, a Fleet Optimization panel/page, and an additive Digital Twin overlay. See [docs/fleet-optimization.md](docs/fleet-optimization.md).
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -224,7 +225,7 @@ existing prediction endpoints. Highlights:
   flood risk and AI decision are always separate indicators.
 - **Requirement #17 accessibility**: a non-3D data list/table fallback below the scene.
 - **Requirement #18 responsiveness**: mobile canvas + touch-friendly OrbitControls.
-- **Requirement #21 tests**: 25 new tests under `server/tests/digitalTwin.test.js`
+- **Requirement #21 tests**: 36 tests under `server/tests/digitalTwin.test.js`
   covering clamping, level banding, coordinate conversion, normalization, route
   geometry, metrics, every reducer event and the consumed API shapes.
 - **Performance**: per-id memoized meshes keyed on primitives so a live event only
@@ -276,6 +277,40 @@ flowchart LR
 📄 Full documentation (lifecycle, sources, dispatch reuse, integrity rules, API, events,
 analytics, Digital Twin overlay): [docs/incidents.md](docs/incidents.md).
 
+## 15h. Predictive Resource & Robot Fleet Optimization
+The fleet optimization layer (`server/services/fleetOptimizationService.js`) is a
+**fleet-level, advisory** layer that answers *which task matters most, which robot should
+ideally take it, and can it get there?* across the whole fleet at once. It is **not** a
+mission engine: it never assigns or dispatches robots, and `missionEngine.js` remains the
+sole authority for assignment and movement. It reuses the **existing** AI Decision Engine
+scores and the **existing** `robotPathPlanningService` primitives (distance/time/battery
+estimation, charging-station lookup) — it never creates a second AI formula or planner. An
+idempotent, no-schema-change feature (no new tables). Highlights:
+
+- **Task queue from real signals**: active incidents + Critical/Warning drains, with a
+  documented priority score (`decision × 0.60 + severity × 0.20 + age × 0.10 + urgency ×
+  0.10`); a missing decision score is **renormalized**, never fabricated.
+- **Honest availability states**: `AVAILABLE`, `BUSY`, `CHARGING`, `LOW_BATTERY`,
+  `OFFLINE`, `UNAVAILABLE`. Only `AVAILABLE` robots are eligible; a robot on an assigned
+  mission is `BUSY` and cannot be double-booked.
+- **Battery-aware route modes**: `DIRECT`, `CHARGE_THEN_TASK` or `NO_FEASIBLE_ROUTE`,
+  reusing the movement-loop constants; a route is never reported feasible on insufficient
+  battery.
+- **Greedy multi-task assignment**: tasks are processed in priority order, one robot per
+  task, with ranked alternatives, reasons, warnings and a human-readable explanation.
+- **Honest states, never silence**: `OK`, `NO_TASKS`, `NO_ROBOTS`, `NO_ELIGIBLE_ROBOT`,
+  `NO_COORDINATES`, `NO_FEASIBLE_ROUTE`, `INSUFFICIENT_DATA`; every unassigned task
+  carries a real reason and required action.
+- **Additive surfaces**: read-only `/api/fleet-optimization` (full + focused views +
+  `analytics`), dashboard/analytics overlays, a signature-guarded live
+  `fleetOptimizationUpdate` Socket.IO event, a **Fleet Optimization** dashboard panel and
+  page, and an additive **Digital Twin** overlay (availability rings, recommended-task
+  highlight, unassigned drain markers) that degrades gracefully when the API is
+  unavailable.
+
+📄 Full documentation (advisory contract, inputs, availability states, scoring, assignment,
+API, events, Digital Twin overlay, tests): [docs/fleet-optimization.md](docs/fleet-optimization.md).
+
 ## 16. Manual Mission Control
 UI interface (`pages/MissionControl.jsx`) enabling operators to manually select specific drains and dispatch available robots on demand.
 
@@ -319,6 +354,7 @@ and the emergency incidents table via `database/migrations/005_incidents.sql`.
 - `decisionUpdate`: Emitted when a drain's AI Decision priority level changes (or its score moves ≥ 3 points) with the full decision payload — priority score/level, recommended action, reasons, contributing factors, robot recommendation and data availability (see [docs/decision-engine.md](docs/decision-engine.md)).
 - `robotRouteUpdate`: Emitted when a drain's robot route planning meaningfully changes (selected robot, planning status, route type or target drain) with the full planning payload — selected robot, route type, waypoints, distance/time/battery estimates and selection reasons (see [docs/robot-path-planning.md](docs/robot-path-planning.md)).
 - `incidentUpdate`: Emitted by the incident service on every real incident change with `{ eventType, incident }`. `eventType` is one of `created`, `assigned`, `robotUnavailable`, `acknowledged`, `responded`, `resolved`; `incident` carries the real row (drain, severity, status, source, decision score/level, robot and route status, timestamps). Used by the Emergency Response panel, the Incidents page, the app-level toast, and the Digital Twin beacon (see [docs/incidents.md](docs/incidents.md)).
+- `fleetOptimizationUpdate`: Emitted (signature-guarded, only on meaningful change) by the fleet optimization service with `{ status, summary, tasks, recommendations, robots, unassigned, generated_at }`. Used by the Fleet Optimization panel/page, the app-level toast (warning on unassigned tasks) and the Digital Twin fleet overlay (see [docs/fleet-optimization.md](docs/fleet-optimization.md)).
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -415,7 +451,7 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **284 tests** covering auth, RBAC, drains, robots, missions,
+The suite currently includes **329 tests** covering auth, RBAC, drains, robots, missions,
 alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
 database mapping, AI prediction, socket emission, alert escalation, and broker-failure
 resilience), the flood risk engine (normalization, trend, classification, historical
@@ -438,7 +474,15 @@ incident layer (lifecycle constants, validation, one-active-incident-per-drain d
 manual + real-decision creation, planner-reuse assignment with honest
 `NO_ROBOT_AVAILABLE` / `NO_COORDINATES` states, guarded transitions, stored-timestamp-only
 timelines, dashboard/analytics overlays, the full `/api/incidents` REST surface with
-authentication, and `incidentUpdate` emission).
+authentication, and `incidentUpdate` emission), and the advisory fleet optimization layer
+(priority + candidate scoring formulas, battery-aware route modes, availability states,
+greedy multi-task assignment with honest unassigned reasons, the summary/status builders,
+signature-guarded `fleetOptimizationUpdate` emission, the full `/api/fleet-optimization`
+REST surface, and the additive Digital Twin fleet overlay).
+
+> Note: `server/tests/floodForecast.test.js` has one known timing-sensitive test that can
+> intermittently fail in a full-suite run; it passes in isolation and on rerun and is
+> unrelated to the features above.
 
 ## 32. Project Folder Structure
 ```
@@ -457,14 +501,18 @@ AI-DrainOS/
 │   │   │   ├── DigitalTwinLegend.jsx      # shared palette legend
 │   │   │   ├── EmergencyResponsePanel.jsx # dashboard incident panel
 │   │   │   ├── IncidentsPage.jsx          # full incident management page
-│   │   │   └── IncidentTimeline.jsx       # lifecycle timeline
+│   │   │   ├── IncidentTimeline.jsx       # lifecycle timeline
+│   │   │   ├── FleetOptimizationPanel.jsx # dashboard fleet panel
+│   │   │   └── FleetOptimizationPage.jsx  # full fleet optimization page
 │   │   ├── pages/
 │   │   ├── services/
 │   │   │   ├── digitalTwinService.js      # REST aggregation (read-only)
 │   │   │   ├── digitalTwinUtils.mjs       # pure shared logic + reducer
-│   │   │   └── incidentService.js         # incidents REST client
+│   │   │   ├── incidentService.js         # incidents REST client
+│   │   │   └── fleetOptimizationService.js # fleet optimization REST client
 │   │   ├── styles/incidents.css
 │   │   ├── styles/digitaltwin.css
+│   │   ├── styles/fleetOptimization.css
 │   │   └── App.jsx
 │   └── vite.config.js
 ├── server/                  # Node.js Express Backend & Socket.IO
@@ -494,7 +542,8 @@ AI-DrainOS/
 │   ├── vision-inspection.md
 │   ├── robot-path-planning.md
 │   ├── digital-twin.md
-│   └── incidents.md
+│   ├── incidents.md
+│   └── fleet-optimization.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example
@@ -530,6 +579,7 @@ Mission Assigned → Target GIS Set → Live Loop Movement → Destination Reach
 ## 39. Known Limitations
 - Simulated GIS step movement uses approximate linear increments rather than road-network pathfinding.
 - Sensor simulator runs locally in synthetic mode.
+- Fleet optimization is **advisory only** (it never dispatches robots) and its distances/times are coordinate-space estimates derived from the existing movement-loop constants, not road-network measurements.
 
 ## 40. Future Enhancements
 - Integration with OpenStreetMap OSRM routing engine for real-world road navigation.
