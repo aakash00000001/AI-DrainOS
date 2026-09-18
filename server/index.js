@@ -12,6 +12,7 @@ const incidentService = require("./services/incidentService");
 const fleetOptimizationService = require("./services/fleetOptimizationService");
 const missionCoordinatorService = require("./services/missionCoordinatorService");
 const sensorIntelligenceService = require("./services/sensorIntelligenceService");
+const weatherFloodCorrelationService = require("./services/weatherFloodCorrelationService");
 
 require("dotenv").config();
 
@@ -619,6 +620,21 @@ setInterval(async () => {
       await sensorIntelligenceService.evaluateAndEmitSensorIntelligence();
     } catch (sensorErr) {
       console.log("⚠️ sensorIntelligenceUpdate skipped:", sensorErr.message);
+    }
+
+    // ==================================================
+    // 14. WEATHER + FLOOD CORRELATION (additive)
+    // ==================================================
+    // Refreshes the bounded real-weather observation store when stale
+    // and emits `weatherFloodCorrelationUpdate` ONLY on a meaningful
+    // change (signature + throttle guarded inside the service, so it
+    // is never emitted on every 5 s tick). Descriptive correlation
+    // only: never dispatches robots and never opens incidents.
+
+    try {
+      await weatherFloodCorrelationService.evaluateAndEmitWeatherCorrelation();
+    } catch (weatherErr) {
+      console.log("⚠️ weatherFloodCorrelationUpdate skipped:", weatherErr.message);
     }
 
   } catch (err) {

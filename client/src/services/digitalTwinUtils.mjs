@@ -605,6 +605,56 @@ export function normalizeSensorIntelligence(payload) {
 }
 
 /**
+ * Normalize a /api/predictions/weather-correlation payload into the
+ * compact weather-context overlay the twin needs (Update #23).
+ * Returns null for a missing/invalid payload so callers degrade to
+ * "no weather overlay". READ ONLY: only real weather observations
+ * and real Pearson correlations are ever carried; missing history
+ * reports NOT_AVAILABLE honestly.
+ */
+export function normalizeWeatherFloodCorrelation(payload) {
+  if (!payload || typeof payload !== "object") return null;
+
+  const strongest = payload.strongest || null;
+  const latest = payload.latest_weather || null;
+
+  return {
+    status: payload.status || null,
+    generatedAt: payload.generated_at || null,
+    windowHours: safeNumber(payload.window_hours, null),
+    disclaimer: payload.disclaimer || null,
+    message: payload.message || null,
+    signalsReady: safeNumber(payload.signals_ready, 0),
+    signalsTotal: safeNumber(payload.signals_total, 0),
+    strongest: strongest
+      ? {
+          signal: strongest.signal || null,
+          label: strongest.label || null,
+          shortLabel: strongest.shortLabel || null,
+          r: safeNumber(strongest.r, null),
+          direction: strongest.direction || null,
+          strength: strongest.strength || null,
+          matchedPairs: safeNumber(strongest.matched_pairs, 0)
+        }
+      : null,
+    latestWeather: latest
+      ? {
+          observedAt: latest.observed_at || null,
+          weatherMain: latest.weather_main || null,
+          weatherDescription: latest.weather_description || null,
+          temperature: safeNumber(latest.temperature, null),
+          humidity: safeNumber(latest.humidity, null),
+          pressure: safeNumber(latest.pressure, null),
+          windSpeed: safeNumber(latest.wind_speed, null),
+          rain1h: safeNumber(latest.rain_1h, null),
+          rain3h: safeNumber(latest.rain_3h, null),
+          source: latest.source || null
+        }
+      : null
+  };
+}
+
+/**
  * Normalize a /api/fleet-optimization payload into the compact
  * overlay the twin needs. Returns null for a missing/invalid
  * payload so callers can degrade to "no fleet overlay".
@@ -968,6 +1018,12 @@ export function digitalTwinReducer(state, action) {
             : state.sensorIntelligence
               ? state.sensorIntelligence
               : null,
+        weatherCorrelation:
+          action.weatherCorrelation !== undefined
+            ? action.weatherCorrelation
+            : state.weatherCorrelation
+              ? state.weatherCorrelation
+              : null,
         loadError: action.loadError,
         refreshNonce: (state.refreshNonce || 0) + 1
       };
@@ -1111,6 +1167,12 @@ export function digitalTwinReducer(state, action) {
       const sensorIntelligence = normalizeSensorIntelligence(action.payload);
       if (!sensorIntelligence) return state;
       return { ...state, sensorIntelligence };
+    }
+
+    case "WEATHER_CORRELATION_UPDATE": {
+      const weatherCorrelation = normalizeWeatherFloodCorrelation(action.payload);
+      if (!weatherCorrelation) return state;
+      return { ...state, weatherCorrelation };
     }
 
     case "ROUTE_UPDATE": {

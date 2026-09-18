@@ -13,6 +13,7 @@ const fleetOptimizationService = require("../services/fleetOptimizationService")
 const historicalIntelligence = require("../services/historicalIntelligenceService");
 const missionCoordinator = require("../services/missionCoordinatorService");
 const sensorIntelligence = require("../services/sensorIntelligenceService");
+const weatherFloodCorrelation = require("../services/weatherFloodCorrelationService");
 
 router.get("/", async (req, res) => {
 
@@ -120,6 +121,17 @@ router.get("/", async (req, res) => {
       sensorAnalytics = await sensorIntelligence.getAnalytics();
     } catch (sensorErr) {
       console.log("⚠️ Sensor intelligence analytics skipped:", sensorErr.message);
+    }
+
+    // Weather + flood correlation analytics are additive and
+    // best-effort. Real observations + honest states only; failure
+    // here never breaks the existing analytics contract.
+    let weatherAnalytics = null;
+
+    try {
+      weatherAnalytics = await weatherFloodCorrelation.getWeatherAnalytics();
+    } catch (weatherErr) {
+      console.log("⚠️ Weather correlation analytics skipped:", weatherErr.message);
     }
 
     res.json({
@@ -274,7 +286,23 @@ router.get("/", async (req, res) => {
       sensor_affected_drains: sensorAnalytics ? sensorAnalytics.affected_drains : 0,
       sensor_health_trend_status: sensorAnalytics
         ? sensorAnalytics.health_trend_status
-        : "INSUFFICIENT_DATA"
+        : "INSUFFICIENT_DATA",
+      weather_correlation: weatherAnalytics
+        ? weatherAnalytics.weather_correlation_status
+        : "WEATHER_UNAVAILABLE",
+      weather_flood_risk: weatherAnalytics
+        ? weatherAnalytics.weather_flood_risk
+        : { status: "NOT_AVAILABLE", r: null, direction: null, strength: null, matched_pairs: 0 },
+      rainfall_water_level: weatherAnalytics
+        ? weatherAnalytics.rainfall_water_level
+        : { status: "WEATHER_UNAVAILABLE", r: null, direction: null, strength: null, matched_pairs: 0 },
+      weather_strongest: weatherAnalytics ? weatherAnalytics.weather_strongest : null,
+      weather_data_quality: weatherAnalytics
+        ? weatherAnalytics.weather_data_quality
+        : { status: "NO_WEATHER_DATA", observation_count: 0 },
+      weather_observation_count: weatherAnalytics ? weatherAnalytics.weather_observation_count : 0,
+      weather_signals_ready: weatherAnalytics ? weatherAnalytics.weather_signals_ready : 0,
+      weather_signals_total: weatherAnalytics ? weatherAnalytics.weather_signals_total : 7
     });
 
   }
@@ -592,6 +620,25 @@ router.get("/coordination", async (req, res) => {
 router.get("/sensor-intelligence", async (req, res) => {
   try {
     const data = await sensorIntelligence.getAnalytics();
+    res.json(data);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/weather-correlation
+// --------------------------------------------------
+// Descriptive weather-flood correlation analytics from REAL
+// observations only. Reports honest WEATHER_UNAVAILABLE /
+// INSUFFICIENT_DATA / NOT_AVAILABLE states; never causal claims.
+// Additive.
+// --------------------------------------------------
+
+router.get("/weather-correlation", async (req, res) => {
+  try {
+    const data = await weatherFloodCorrelation.getWeatherAnalytics();
     res.json(data);
   } catch (err) {
     console.log(err);

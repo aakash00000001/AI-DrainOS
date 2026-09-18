@@ -27,6 +27,10 @@ app.use(
   "/api/predictions/sensor-intelligence",
   require("./routes/sensorIntelligence")
 );
+app.use(
+  "/api/predictions/weather-correlation",
+  require("./routes/weatherFloodCorrelation")
+);
 app.use("/api/predictions", require("./routes/predictions"));
 app.use("/api/weather", require("./routes/weather"));
 app.use("/api/analytics", require("./routes/analytics"));

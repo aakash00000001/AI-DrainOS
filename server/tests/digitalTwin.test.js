@@ -706,3 +706,119 @@ test("GET /api/fleet-optimization is consumable by the Digital Twin overlay", as
     "every active task is either assigned or unassigned"
   );
 });
+
+// ============================================================
+// 5. Additive weather + flood correlation overlay (Update #23)
+//
+// READ ONLY: the overlay carries only real weather observations
+// and real Pearson correlations; the twin never fabricates a
+// weather history or a causal claim.
+// ============================================================
+
+test("weather: normalizeWeatherFloodCorrelation builds the compact overlay from a real payload", () => {
+  const overlay = u.normalizeWeatherFloodCorrelation({
+    status: "READY",
+    generated_at: "2026-09-18T08:00:00Z",
+    window_hours: 24,
+    disclaimer: "non-causal",
+    signals_ready: 3,
+    signals_total: 7,
+    strongest: {
+      signal: "rainfall_water_level",
+      label: "Rainfall ↔ Water level",
+      shortLabel: "Rainfall ↔ Water",
+      r: 0.82,
+      direction: "POSITIVE",
+      strength: "VERY_STRONG",
+      matched_pairs: 24
+    },
+    latest_weather: {
+      observed_at: "2026-09-18T07:55:00Z",
+      weather_main: "Rain",
+      weather_description: "light rain",
+      temperature: 27.4,
+      humidity: 88,
+      pressure: 1009,
+      wind_speed: 3.1,
+      rain_1h: 2.5,
+      rain_3h: null,
+      source: "OPENWEATHERMAP"
+    }
+  });
+
+  assert.equal(overlay.status, "READY");
+  assert.equal(overlay.windowHours, 24);
+  assert.equal(overlay.signalsReady, 3);
+  assert.equal(overlay.signalsTotal, 7);
+  assert.equal(overlay.strongest.signal, "rainfall_water_level");
+  assert.equal(overlay.strongest.r, 0.82);
+  assert.equal(overlay.strongest.strength, "VERY_STRONG");
+  assert.equal(overlay.strongest.matchedPairs, 24);
+  assert.equal(overlay.latestWeather.weatherMain, "Rain");
+  assert.equal(overlay.latestWeather.temperature, 27.4);
+  assert.equal(overlay.latestWeather.source, "OPENWEATHERMAP");
+
+  assert.equal(u.normalizeWeatherFloodCorrelation(null), null);
+  assert.equal(u.normalizeWeatherFloodCorrelation("nope"), null);
+  assert.equal(u.normalizeWeatherFloodCorrelation(undefined), null);
+});
+
+test("weather: normalizeWeatherFloodCorrelation is honest when no correlation exists", () => {
+  const overlay = u.normalizeWeatherFloodCorrelation({
+    status: "WEATHER_UNAVAILABLE",
+    signals_ready: 0,
+    signals_total: 7,
+    strongest: null,
+    latest_weather: null,
+    message: "No weather observations recorded yet."
+  });
+
+  assert.equal(overlay.status, "WEATHER_UNAVAILABLE");
+  assert.equal(overlay.strongest, null);
+  assert.equal(overlay.latestWeather, null);
+  assert.equal(overlay.message, "No weather observations recorded yet.");
+});
+
+test("reducer: WEATHER_CORRELATION_UPDATE stores the overlay and ignores invalid payloads", () => {
+  const payload = {
+    status: "INSUFFICIENT_DATA",
+    generated_at: "2026-09-18T08:00:00Z",
+    window_hours: 24,
+    signals_ready: 0,
+    signals_total: 7,
+    strongest: null,
+    latest_weather: null
+  };
+
+  const state = u.digitalTwinReducer({ weatherCorrelation: null }, {
+    type: "WEATHER_CORRELATION_UPDATE",
+    payload
+  });
+  assert.equal(state.weatherCorrelation.status, "INSUFFICIENT_DATA");
+  assert.equal(state.weatherCorrelation.signalsTotal, 7);
+  assert.equal(state.weatherCorrelation.strongest, null);
+
+  const unchanged = { weatherCorrelation: null };
+  assert.equal(
+    u.digitalTwinReducer(unchanged, { type: "WEATHER_CORRELATION_UPDATE", payload: null }),
+    unchanged,
+    "an invalid payload must not clobber existing weather-correlation state"
+  );
+});
+
+test("GET /api/predictions/weather-correlation is consumable by the Digital Twin overlay", async () => {
+  const res = await request(app).get("/api/predictions/weather-correlation");
+  assert.equal(res.status, 200);
+  assert.ok(res.body);
+
+  const overlay = u.normalizeWeatherFloodCorrelation(res.body);
+  assert.ok(overlay);
+  assert.equal(typeof overlay.signalsTotal, "number");
+  assert.ok(overlay.signalsTotal > 0, "the signal list is non-empty");
+  assert.ok(
+    overlay.status === "READY" ||
+    overlay.status === "INSUFFICIENT_DATA" ||
+    overlay.status === "WEATHER_UNAVAILABLE",
+    "status is one of the honest, additive states"
+  );
+});

@@ -250,6 +250,86 @@ Base URL: `http://localhost:5000/api` (or environment configured `VITE_API_URL`)
 
 ---
 
+## Weather + Flood Correlation API (`/api/predictions/weather-correlation`)
+
+All endpoints are **read-only**, public, and describe the Pearson association between
+**real** weather observations (`weather_observations`) and **real** sensor readings
+(`sensor_readings`) inside a bounded window (default 24 h, max 168 h). No endpoint ever
+fabricates weather, correlation or causality. Every response carries a non-causal
+`disclaimer`. See [weather-flood-correlation.md](weather-flood-correlation.md).
+
+| Signal keys | availability |
+| ----------- | ------------ |
+| `rainfall_water_level`, `humidity_water_level`, `temperature_water_level`, `pressure_water_level`, `wind_water_level` | computed from real aligned pairs |
+| `weather_flood_risk`, `weather_forecast` | always `NOT_AVAILABLE` (history not persisted; never recomputed) |
+
+### `GET /api/predictions/weather-correlation`
+- **Access**: Public / Authenticated
+- **Query**: optional `?window=1..168` (hours; default 24).
+- **Response** (200 OK): `{ "status", "generated_at", "window_hours", "disclaimer",
+  "weather_data_quality": { "status", "observation_count", "window_hours",
+  "first_observation_at", "last_observation_at" }, "signals_ready", "signals_total",
+  "signals": [ { "signal", "label", "shortLabel", "description", "status", "r",
+  "direction", "strength", "matched_pairs", "message" } ], "strongest", "latest_weather",
+  "message" }`.
+- **Response** (400): `{ "error": "Invalid window hours" }`.
+
+### `GET /api/predictions/weather-correlation/summary`
+- **Access**: Public / Authenticated
+- **Query**: optional `?window=`.
+- **Response** (200 OK): Compact summary (same shape as the full overview minus `signals`).
+
+### `GET /api/predictions/weather-correlation/signals`
+- **Access**: Public / Authenticated
+- **Query**: optional `?window=`.
+- **Response** (200 OK): Signal definitions plus each signal's current computed
+  `status` / `r` / `direction` / `strength`)`.
+
+### `GET /api/predictions/weather-correlation/trends`
+- **Access**: Public / Authenticated
+- **Query**: optional `?signal=` (default `rainfall_water_level`), `?drainId=`,
+  `?window=`, `?lag=0|15|30|60` (rainfall lag minutes, default 0).
+- **Response** (200 OK): `{ "status", "samples", "buckets": [ { "bucket",
+  "bucket_start", "bucket_end", "matched_pairs", "status", "r", "direction",
+  "strength" } ], "trend": "strengthening" | "weakening" | "stable" | "insufficient",
+  "trend_reason" }`.
+- **Response** (400): `{ "error": "Invalid signal", "valid_signals": [...] }` |
+  `{ "error": "Invalid window hours" }` | `{ "error": "Invalid lag minutes",
+  "valid_lag_minutes": [0,15,30,60] }` | `{ "error": "Invalid drain id" }`.
+
+### `GET /api/predictions/weather-correlation/drains`
+- **Access**: Public / Authenticated
+- **Query**: optional `?window=`.
+- **Response** (200 OK): `{ "status", "window_hours", "generated_at", "disclaimer",
+  "drains": [ { "drain_id", "zone", "location", "status", "strongest" } ] }`.
+
+### `GET /api/predictions/weather-correlation/drain/:drainId`
+- **Access**: Public / Authenticated
+- **Query**: optional `?signal=`, `?window=`, `?lag=`.
+- **Response** (200 OK): Full per-drain correlation result: signal summary (compact) plus
+  `samples` (`matched_pairs`, `weather_used`, `sensor_used`, `weather_total`,
+  `sensor_total`, `missing_weather`, `timestamp_alignment`, `window_hours`, `lag_minutes`,
+  `tolerance_minutes`), `correlation`, `wording`, `disclaimer` and `drain_id`.
+- **Response** (404): `{ "error": "Drain not found" }`.
+- **Response** (400): `{ "error": "Invalid drain id" }` | invalid signal / window / lag.
+
+### `GET /api/predictions/weather-correlation/:signal`
+- **Access**: Public / Authenticated
+- **Query**: optional `?drainId=`, `?window=`, `?lag=`.
+- **Response** (200 OK): Single-signal correlation (full detail, optionally filtered to one
+  drain).
+- **Response** (404): `{ "error": "Signal not found" }`.
+- **Response** (400): `{ "error": "Invalid signal", "valid_signals": [...] }` | invalid
+  drain id / window / lag.
+
+### Socket event
+The service emits `weatherFloodCorrelationUpdate` through the **existing shared** hub
+(signature + throttle guarded — never per 5-second tick, never per MQTT packet) with the
+summary payload. No second Socket.IO server is created. Wired into the live 5-second loop;
+the MQTT pipeline only triggers the guarded refresh path.
+
+---
+
 ## Incidents API (`/api/incidents`)
 
 An auditable emergency lifecycle: `OPEN → ACKNOWLEDGED → RESPONDING → RESOLVED`.
@@ -349,6 +429,7 @@ Every real change emits `incidentUpdate` through the existing shared hub:
   - `historicalSummary` is **additive** (Update #20A), camelCase and best-effort: `{ "period", "historicalIncidentCount", "recurrentDrainCount", "degradedDrainCount", "historicalDataQuality", "topRecurringDrains", "recentHistoricalTrend" }`. See [historical-intelligence.md](historical-intelligence.md).
   - `coordination` is **additive** (Update #22), camelCase and best-effort: `{ "pendingTasks", "assignedTasks", "unassignedTasks", "availableRobots", "busyRobots", "chargingRobots", "coordinationConflicts", "reassignmentRequired", "status" }`. See [mission-coordination.md](mission-coordination.md).
   - `sensorIntelligence`, `sensorHealthSummary` and `sensorAnomalySummary` are **additive** (Update #21), camelCase and best-effort: total/healthy/degraded/critical sensor counts, average health, anomaly/stale/missing-data/out-of-range counts and affected drains. See [sensor-intelligence.md](sensor-intelligence.md).
+  - `weatherCorrelation` is **additive** (Update #23), camelCase and best-effort: `{ "status", "weatherDataQuality", "signalsReady", "signalsTotal", "strongest", "latestWeather", "message" }`. Honest `WEATHER_UNAVAILABLE` when no real weather has been recorded. See [weather-flood-correlation.md](weather-flood-correlation.md).
 
 ### `GET /api/dashboard/fleet`
 - **Access**: Public / Authenticated
@@ -397,7 +478,7 @@ Every real change emits `incidentUpdate` through the existing shared hub:
   - `total_cleanings` / `robot_operations` / `total_missions`: mission records.
   - `blockages_detected`: open Critical alerts.
   - `flood_predictions`: sensor readings count.
-  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)), additive fleet fields `fleet_status`, `fleet_total_robots`, `fleet_available_robots`, `fleet_busy_robots`, `fleet_charging_robots`, `fleet_low_battery_robots`, `fleet_utilization`, `fleet_active_tasks`, `fleet_assigned_tasks`, `fleet_unassigned_tasks`, `fleet_assignment_coverage`, `fleet_average_response_minutes` (see [fleet-optimization.md](fleet-optimization.md)), and additive historical fields `historical_period`, `historical_incident_count`, `historical_resolved_incident_count`, `historical_mission_count`, `historical_alert_count`, `historical_sensor_reading_count`, `historical_recurrent_drain_count`, `historical_degraded_drain_count`, `historical_data_quality`, `historical_recent_trend`, `historical_top_recurring_drains` (see [historical-intelligence.md](historical-intelligence.md)), and additive coordination fields `coordination_status`, `coordination_pending_tasks`, `coordination_assigned_tasks`, `coordination_unassigned_tasks`, `coordination_available_robots`, `coordination_busy_robots`, `coordination_charging_robots`, `coordination_conflict_count`, `coordination_reassignment_required`, `coordination_average_task_priority`, `coordination_average_candidate_score` (see [mission-coordination.md](mission-coordination.md)).
+  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)), additive fleet fields `fleet_status`, `fleet_total_robots`, `fleet_available_robots`, `fleet_busy_robots`, `fleet_charging_robots`, `fleet_low_battery_robots`, `fleet_utilization`, `fleet_active_tasks`, `fleet_assigned_tasks`, `fleet_unassigned_tasks`, `fleet_assignment_coverage`, `fleet_average_response_minutes` (see [fleet-optimization.md](fleet-optimization.md)), and additive historical fields `historical_period`, `historical_incident_count`, `historical_resolved_incident_count`, `historical_mission_count`, `historical_alert_count`, `historical_sensor_reading_count`, `historical_recurrent_drain_count`, `historical_degraded_drain_count`, `historical_data_quality`, `historical_recent_trend`, `historical_top_recurring_drains` (see [historical-intelligence.md](historical-intelligence.md)), and additive coordination fields `coordination_status`, `coordination_pending_tasks`, `coordination_assigned_tasks`, `coordination_unassigned_tasks`, `coordination_available_robots`, `coordination_busy_robots`, `coordination_charging_robots`, `coordination_conflict_count`, `coordination_reassignment_required`, `coordination_average_task_priority`, `coordination_average_candidate_score` (see [mission-coordination.md](mission-coordination.md)), and additive weather fields `weather_correlation`, `weather_flood_risk`, `rainfall_water_level`, `weather_strongest`, `weather_data_quality`, `weather_observation_count`, `weather_signals_ready`, `weather_signals_total` (see [weather-flood-correlation.md](weather-flood-correlation.md)).
 
 ### `GET /api/analytics/monthly`
 - **Access**: Public / Authenticated
@@ -450,6 +531,19 @@ Every real change emits `incidentUpdate` through the existing shared hub:
 ### `GET /api/analytics/coordination`
 - **Access**: Public / Authenticated
 - **Response** (200 OK): Mission coordination analytics in snake_case: `status`, `generated_at`, `task_assignment_count`, `task_completion_count`, `task_cancelled_count`, `unassigned_task_count`, `reassignment_count`, `average_assignment_time_seconds` (always `null` + `average_assignment_time_available: false` with an explicit `average_assignment_time_reason`), `average_mission_duration_seconds`, `robot_utilization`, coherent `coordination_conflicts`, `active_tasks`, `pending_tasks`, the flat `coordination_*` aliases, `coordination_average_task_priority`, `coordination_average_candidate_score`, `coordination_status` and `disclaimer`. See [mission-coordination.md](mission-coordination.md).
+
+### `GET /api/analytics/weather-correlation`
+- **Access**: Public / Authenticated
+- **Query**: optional `?window=1..168` (default 24).
+- **Response** (200 OK): Descriptive weather-flood correlation analytics in snake_case:
+  `weather_correlation_status`, `weather_data_quality`, `weather_observation_count`,
+  `weather_signals_ready`, `weather_signals_total`, `weather_window_hours`,
+  `weather_strongest`, per-signal compact results (`rainfall_water_level`,
+  `humidity_water_level`, `temperature_water_level`, `pressure_water_level`,
+  `wind_water_level`, `weather_flood_risk`, `weather_forecast` — each `{ status`, `r`,
+  `direction`, `strength`, `matched_pairs` }), `latest_weather`, `disclaimer` and
+  `generated_at`. Honest `WEATHER_UNAVAILABLE` / `INSUFFICIENT_DATA` / `NOT_AVAILABLE`
+  states only — never causal. See [weather-flood-correlation.md](weather-flood-correlation.md).
 
 ### Advisory Socket event
 Fleet optimization emits `fleetOptimizationUpdate` (signature-guarded, only on meaningful change) through the existing shared hub:

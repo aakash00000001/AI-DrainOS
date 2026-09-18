@@ -23,6 +23,8 @@ import MissionCoordinationPanel from "./components/MissionCoordinationPanel";
 import MissionCoordinationPage from "./components/MissionCoordinationPage";
 import SensorIntelligencePanel from "./components/SensorIntelligencePanel";
 import SensorIntelligencePage from "./components/SensorIntelligencePage";
+import WeatherFloodCorrelationPanel from "./components/WeatherFloodCorrelationPanel";
+import WeatherFloodCorrelationPage from "./components/WeatherFloodCorrelationPage";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -196,6 +198,18 @@ function App() {
 
     });
 
+    socket.on("weatherFloodCorrelationUpdate", (payload) => {
+
+      if (!payload || !payload.signals_ready) return;
+
+      // Only surface the transition into a ready correlation state;
+      // routine recomputations stay silent to avoid noise.
+      toast.info(
+        `⛅ Weather + Flood correlation: ${payload.signals_ready}/${payload.signals_total} signal(s) computed over the last ${payload.window_hours}h`
+      );
+
+    });
+
     return () => {
 
       socket.off("connect");
@@ -210,6 +224,7 @@ function App() {
       socket.off("fleetOptimizationUpdate");
       socket.off("missionCoordinationUpdate");
       socket.off("sensorIntelligenceUpdate");
+      socket.off("weatherFloodCorrelationUpdate");
 
     };
 
@@ -351,6 +366,10 @@ function App() {
             onOpen={() => handleNavigate("sensorintelligence")}
           />
 
+          <WeatherFloodCorrelationPanel
+            onOpen={() => handleNavigate("weathercorrelation")}
+          />
+
           <DigitalTwinPreview
             onOpen={() => handleNavigate("digitaltwin")}
           />
@@ -487,6 +506,24 @@ function App() {
           <h2>📡 Sensor Intelligence</h2>
 
           <SensorIntelligencePage />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Weather + Flood Correlation (Update #23)
+    if (activePage === "weathercorrelation") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>⛅ Weather + Flood Correlation</h2>
+
+          <WeatherFloodCorrelationPage />
 
         </div>
 

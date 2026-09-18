@@ -27,6 +27,7 @@ const maintenanceService = require("./maintenancePredictionService");
 const decisionEngine = require("./decisionEngine");
 const incidentService = require("./incidentService");
 const sensorIntelligenceService = require("./sensorIntelligenceService");
+const weatherFloodCorrelationService = require("./weatherFloodCorrelationService");
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
@@ -896,6 +897,21 @@ async function handleMessage(topic, rawPayload, context = {}) {
       });
     } catch (intelligenceErr) {
       console.log("⚠️ Sensor intelligence skipped:", intelligenceErr.message);
+    }
+
+    // --------------------------------------------------
+    // 8c. Weather + Flood Correlation (additive, throttled).
+    // Bounded real-weather refresh only: the service-level throttle
+    // + freshness guard means an OpenWeatherMap snapshot is fetched
+    // at most once every 10 minutes (and only when the stored store
+    // is stale). Analytical results / live emission are left to the
+    // signature-guarded live loop. Never breaks the MQTT pipeline.
+    // --------------------------------------------------
+
+    try {
+      await weatherFloodCorrelationService.refreshWeatherIfStale();
+    } catch (weatherErr) {
+      console.log("⚠️ Weather refresh skipped:", weatherErr.message);
     }
 
     console.log(

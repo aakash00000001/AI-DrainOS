@@ -14,7 +14,8 @@ import {
   FaAmbulance,
   FaTruckMoving,
   FaNetworkWired,
-  FaMicrochip
+  FaMicrochip,
+  FaCloudRain
 } from "react-icons/fa";
 
 import "../../styles/sidebar.css";
@@ -85,6 +86,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
           >
             <FaMicrochip />
             <span>Sensor Intelligence</span>
+          </li>
+
+          {/* Weather + Flood Correlation (Update #23) */}
+          <li
+            className={activePage === "weathercorrelation" ? "active" : ""}
+            onClick={() => onNavigate("weathercorrelation")}
+          >
+            <FaCloudRain />
+            <span>Weather Correlation</span>
           </li>
 
           {/* Alerts */}

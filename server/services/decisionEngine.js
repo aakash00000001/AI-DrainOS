@@ -27,6 +27,7 @@ const maintenanceService = require("./maintenancePredictionService");
 const visionService = require("./drainVisionService");
 const socketHub = require("./socketHub");
 const sensorIntelligenceService = require("./sensorIntelligenceService");
+const weatherFloodCorrelationService = require("./weatherFloodCorrelationService");
 
 // ------------------------------------------------------------
 // Model constants (single source of truth for the prioritisation)
@@ -458,6 +459,19 @@ async function getDrainDecision(drainId) {
     sensorContext = null;
   }
 
+  // Additive weather + weather-flood correlation context (Update #23).
+  // Descriptive only - never changes the priority formula, its
+  // weights or the score. Best-effort and TTL-cached; a failure here
+  // degrades to null and never breaks the engine.
+  let weatherCorrelationContext = null;
+
+  try {
+    weatherCorrelationContext =
+      await weatherFloodCorrelationService.getWeatherCorrelationContext();
+  } catch (weatherErr) {
+    weatherCorrelationContext = null;
+  }
+
   let risk = null;
   let forecast = null;
   let maintenance = null;
@@ -614,6 +628,12 @@ async function getDrainDecision(drainId) {
         vision: false
       },
       sensorIntelligence: sensorContext,
+      weatherContext: weatherCorrelationContext
+        ? weatherCorrelationContext.weatherContext
+        : null,
+      weatherCorrelation: weatherCorrelationContext
+        ? weatherCorrelationContext.weatherCorrelation
+        : null,
       disclaimer: DECISION_DISCLAIMER,
       generatedAt: new Date().toISOString()
     };
@@ -668,6 +688,12 @@ async function getDrainDecision(drainId) {
       vision: !!(visionReady && finiteNumber(vision.visualRiskScore) !== null)
     },
     sensorIntelligence: sensorContext,
+    weatherContext: weatherCorrelationContext
+      ? weatherCorrelationContext.weatherContext
+      : null,
+    weatherCorrelation: weatherCorrelationContext
+      ? weatherCorrelationContext.weatherCorrelation
+      : null,
     disclaimer: DECISION_DISCLAIMER,
     generatedAt: new Date().toISOString()
   };

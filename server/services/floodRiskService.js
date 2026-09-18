@@ -28,6 +28,10 @@ const pool = require("../config/db");
 // WITHOUT changing the risk formula below. Best-effort + TTL-cached.
 const sensorIntelligenceService = require("./sensorIntelligenceService");
 
+// Additive weather + weather-flood correlation context (Update #23).
+// Descriptive only - never changes the risk formula or its weights.
+const weatherFloodCorrelationService = require("./weatherFloodCorrelationService");
+
 // --------------------------------------------------
 // Configuration (single location)
 // --------------------------------------------------
@@ -427,6 +431,15 @@ async function buildDrainRiskDetail(drainId) {
     sensorIntelligence = null;
   }
 
+  // Additive weather + correlation context (Update #23). Descriptive
+  // only; a failure degrades to null and never changes the risk above.
+  let weatherCorrelationContext = null;
+  try {
+    weatherCorrelationContext = await weatherFloodCorrelationService.getWeatherCorrelationContext();
+  } catch (weatherErr) {
+    weatherCorrelationContext = null;
+  }
+
   return {
     drainId: Number(row.id),
     sensorId: Number(row.sensor_id),
@@ -437,7 +450,13 @@ async function buildDrainRiskDetail(drainId) {
     temperature: Number(row.temperature),
     timestamp: row.recorded_at,
     ...risk,
-    sensorIntelligence
+    sensorIntelligence,
+    weatherContext: weatherCorrelationContext
+      ? weatherCorrelationContext.weatherContext
+      : null,
+    weatherCorrelation: weatherCorrelationContext
+      ? weatherCorrelationContext.weatherCorrelation
+      : null
   };
 }
 

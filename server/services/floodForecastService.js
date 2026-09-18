@@ -341,7 +341,12 @@ async function getDrainForecast(drainId) {
     // Additive sensor-quality context (Update #21). Carried over from
     // the flood-risk detail (which is itself best-effort + TTL-cached);
     // never alters the forecast model above and degrades to null.
-    sensorIntelligence: detail.sensorIntelligence || null
+    sensorIntelligence: detail.sensorIntelligence || null,
+    // Additive weather + weather-flood correlation context (Update
+    // #23). Carried over from the flood-risk detail as descriptive
+    // context only; never alters the forecast model above.
+    weatherContext: detail.weatherContext || null,
+    weatherCorrelation: detail.weatherCorrelation || null
   };
 }
 

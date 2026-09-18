@@ -13,6 +13,7 @@ const fleetOptimizationService = require("../services/fleetOptimizationService")
 const historicalIntelligence = require("../services/historicalIntelligenceService");
 const missionCoordinator = require("../services/missionCoordinatorService");
 const sensorIntelligence = require("../services/sensorIntelligenceService");
+const weatherFloodCorrelation = require("../services/weatherFloodCorrelationService");
 
 router.get("/", async (req, res) => {
   try {
@@ -151,6 +152,27 @@ router.get("/", async (req, res) => {
       console.log("⚠️ Dashboard sensor intelligence skipped:", sensorErr.message);
     }
 
+    // Weather + flood correlation — additive + best-effort.
+    // Descriptive weather-flood associations from REAL observations
+    // only; never a causal claim and never replaces flood risk.
+    let weatherCorrelationSummary = {
+      weatherCorrelation: {
+        status: "WEATHER_UNAVAILABLE",
+        weatherDataQuality: "NO_WEATHER_DATA",
+        signalsReady: 0,
+        signalsTotal: 7,
+        strongest: null,
+        latestWeather: null,
+        message: "Weather correlation is temporarily unavailable."
+      }
+    };
+
+    try {
+      weatherCorrelationSummary = await weatherFloodCorrelation.getDashboardSummary();
+    } catch (weatherErr) {
+      console.log("⚠️ Dashboard weather correlation skipped:", weatherErr.message);
+    }
+
     res.json({
       totalDrains: Number(totalDrains.rows[0].count),
       activeRobots: Number(activeRobots.rows[0].count),
@@ -159,7 +181,8 @@ router.get("/", async (req, res) => {
       fleet,
       historicalSummary,
       coordination,
-      ...sensorIntelligenceSummary
+      ...sensorIntelligenceSummary,
+      ...weatherCorrelationSummary
     });
 
   } catch (err) {

@@ -3,6 +3,7 @@
 -- Run via: node database/setup.js   (or psql -f)
 -- ============================================================
 
+DROP TABLE IF EXISTS weather_observations CASCADE;
 DROP TABLE IF EXISTS sensor_readings CASCADE;
 DROP TABLE IF EXISTS drain_vision_inspections CASCADE;
 DROP TABLE IF EXISTS maintenance_predictions CASCADE;
@@ -123,6 +124,44 @@ CREATE TABLE sensor_readings (
 CREATE INDEX idx_sensor_readings_sensor_id ON sensor_readings(sensor_id);
 CREATE INDEX idx_sensor_readings_drain_id ON sensor_readings(drain_id);
 CREATE INDEX idx_sensor_readings_recorded_at ON sensor_readings(recorded_at);
+
+-- ============================================================
+-- WEATHER OBSERVATIONS (Weather + Flood Correlation Intelligence)
+--
+-- Update #23. Stores only REAL weather snapshots fetched from the
+-- existing OpenWeatherMap integration (server/routes/weather.js)
+-- at a bounded, throttled cadence. Every row is a genuine
+-- observation - this table is NEVER backfilled or seeded with
+-- invented history, so a fresh install starts empty and honest
+-- WEATHER_UNAVAILABLE states are reported until real observations
+-- accumulate.
+--
+-- Correlation analysis pairs these observations with the real
+-- sensor_readings rows above. Fields mirror the raw OWM current-
+-- weather payload (metric units). rain_1h / rain_3h are only
+-- present when the payload reported rain - analysis treats missing
+-- values as 0 mm (dry), never as invented rainfall.
+-- Mirrored by database/migrations/007_weather_observations.sql for
+-- existing databases.
+-- ============================================================
+
+CREATE TABLE weather_observations (
+  id SERIAL PRIMARY KEY,
+  observed_at TIMESTAMP NOT NULL UNIQUE,
+  temperature REAL,
+  humidity REAL,
+  pressure REAL,
+  wind_speed REAL,
+  weather_main VARCHAR(40),
+  weather_description VARCHAR(120),
+  rain_1h REAL,
+  rain_3h REAL,
+  source VARCHAR(30) NOT NULL DEFAULT 'OPENWEATHERMAP',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_weather_observations_observed_at
+  ON weather_observations(observed_at);
 
 -- ============================================================
 -- MAINTENANCE PREDICTIONS (maintenance / blockage prediction)

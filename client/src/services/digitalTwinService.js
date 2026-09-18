@@ -18,6 +18,7 @@
 //   GET /api/predictions/maintenance/:id (on-demand)
 //   GET /api/predictions/decision/:id  (on-demand)
 //   GET /api/predictions/vision/:id    (on-demand)
+//   GET /api/predictions/weather-correlation (additive, Update #23)
 //
 // Promise.allSettled is used deliberately: a failing endpoint must
 // degrade to an honest "data unavailable" scene, never a crash.
@@ -39,7 +40,8 @@ import {
   buildActiveIncidentByDrain,
   normalizeFleetOptimization,
   normalizeMissionCoordination,
-  normalizeSensorIntelligence
+  normalizeSensorIntelligence,
+  normalizeWeatherFloodCorrelation
 } from "./digitalTwinUtils.mjs";
 
 function coordinatePoints(drains, robots, stations) {
@@ -68,7 +70,8 @@ export async function loadDigitalTwinData() {
     incidentsRes,
     fleetRes,
     coordinationRes,
-    sensorIntelligenceRes
+    sensorIntelligenceRes,
+    weatherCorrelationRes
   ] = await Promise.allSettled([
     axios.get(`${API_URL}/drains`),
     axios.get(`${API_URL}/sensors`),
@@ -79,7 +82,8 @@ export async function loadDigitalTwinData() {
     axios.get(`${API_URL}/incidents/active`),
     axios.get(`${API_URL}/fleet-optimization`),
     axios.get(`${API_URL}/missions/coordination`),
-    axios.get(`${API_URL}/predictions/sensor-intelligence`)
+    axios.get(`${API_URL}/predictions/sensor-intelligence`),
+    axios.get(`${API_URL}/predictions/weather-correlation`)
   ]);
 
   const rawDrains = drainsRes.status === "fulfilled" ? asArray(drainsRes.value.data) : [];
@@ -208,6 +212,15 @@ export async function loadDigitalTwinData() {
       ? normalizeSensorIntelligence(sensorIntelligenceRes.value.data)
       : null;
 
+  // Weather + flood correlation overlay (Update #23) — additive,
+  // READ ONLY. Carries only real weather observations and real
+  // Pearson correlations; a missing/failed endpoint degrades to
+  // null and no weather badge is drawn.
+  const weatherCorrelation =
+    weatherCorrelationRes.status === "fulfilled"
+      ? normalizeWeatherFloodCorrelation(weatherCorrelationRes.value.data)
+      : null;
+
   if (sensorIntelligence) {
     for (const sensor of sensors) {
       const intel = sensorIntelligence.bySensor[sensor.id];
@@ -236,6 +249,11 @@ export async function loadDigitalTwinData() {
     sensorStaleSensors: sensorIntelligence ? sensorIntelligence.summary.staleSensors : 0,
     sensorMissingDataSensors: sensorIntelligence ? sensorIntelligence.summary.missingDataSensors : 0,
     sensorCriticalSensors: sensorIntelligence ? sensorIntelligence.summary.counts.critical : 0,
+    weatherCorrelationStatus: weatherCorrelation ? weatherCorrelation.status : null,
+    weatherSignalsReady: weatherCorrelation ? weatherCorrelation.signalsReady : 0,
+    weatherSignalsTotal: weatherCorrelation ? weatherCorrelation.signalsTotal : 0,
+    weatherObservationCount: weatherCorrelation && weatherCorrelation.latestWeather ? 1 : 0,
+    weatherStrongestR: weatherCorrelation && weatherCorrelation.strongest ? weatherCorrelation.strongest.r : null,
     dataSources: {
       drains: drainsRes.status === "fulfilled",
       sensors: sensorsRes.status === "fulfilled",
@@ -246,7 +264,8 @@ export async function loadDigitalTwinData() {
       incidents: incidentsRes.status === "fulfilled",
       fleetOptimization: fleetRes.status === "fulfilled",
       missionCoordination: coordinationRes.status === "fulfilled",
-      sensorIntelligence: sensorIntelligenceRes.status === "fulfilled"
+      sensorIntelligence: sensorIntelligenceRes.status === "fulfilled",
+      weatherCorrelation: weatherCorrelationRes.status === "fulfilled"
     }
   });
 
@@ -260,7 +279,8 @@ export async function loadDigitalTwinData() {
     incidentsRes.status !== "fulfilled" && "incidents",
     fleetRes.status !== "fulfilled" && "fleetOptimization",
     coordinationRes.status !== "fulfilled" && "missionCoordination",
-    sensorIntelligenceRes.status !== "fulfilled" && "sensorIntelligence"
+    sensorIntelligenceRes.status !== "fulfilled" && "sensorIntelligence",
+    weatherCorrelationRes.status !== "fulfilled" && "weatherCorrelation"
   ].filter(Boolean);
 
   return {
@@ -276,6 +296,7 @@ export async function loadDigitalTwinData() {
     fleet,
     coordination,
     sensorIntelligence,
+    weatherCorrelation,
     origin,
     metrics,
     loadError

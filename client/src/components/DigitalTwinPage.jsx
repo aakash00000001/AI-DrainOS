@@ -25,7 +25,8 @@ import {
   FaClock,
   FaSearch,
   FaBolt,
-  FaNetworkWired
+  FaNetworkWired,
+  FaCloudRain
 } from "react-icons/fa";
 
 import DigitalTwin from "./DigitalTwin";
@@ -61,6 +62,7 @@ const INITIAL_STATE = {
   fleet: null,
   coordination: null,
   sensorIntelligence: null,
+  weatherCorrelation: null,
   byDrain: {},
   bySensor: {}
 };
@@ -421,7 +423,7 @@ function RobotDetails({ robot, fleetInfo, coordinationInfo }) {
   );
 }
 
-function SensorDetails({ sensor, intel }) {
+function SensorDetails({ sensor, intel, weatherFloodCorrelation }) {
   return (
     <div>
       <div className="dt-section-title" style={{ color: "#06b6d4" }}>
@@ -448,6 +450,28 @@ function SensorDetails({ sensor, intel }) {
             intel && intel.latestAnomaly
               ? `${intel.latestAnomaly.type} / ${intel.latestAnomaly.severity}`
               : null
+          }
+        />
+        {/* Weather + flood correlation overlay (Update #23) — read-only */}
+        {weatherFloodCorrelation && weatherFloodCorrelation.latestWeather && (
+          <DetailsField
+            label="Latest weather"
+            value={
+              `${weatherFloodCorrelation.latestWeather.weatherMain || "—"}` +
+              (weatherFloodCorrelation.latestWeather.temperature != null
+                ? ` · ${weatherFloodCorrelation.latestWeather.temperature}°C`
+                : "")
+            }
+          />
+        )}
+        <DetailsField
+          label="Weather corr"
+          value={
+            weatherFloodCorrelation && weatherFloodCorrelation.strongest
+              ? `r ${weatherFloodCorrelation.strongest.r} · ${weatherFloodCorrelation.strongest.shortLabel || weatherFloodCorrelation.strongest.signal}`
+              : weatherFloodCorrelation
+                ? weatherFloodCorrelation.status || "NO DATA"
+                : null
           }
         />
       </div>
@@ -764,6 +788,9 @@ function DigitalTwinPage({ initialView = "overview" }) {
     const onSensorIntelligence = (payload) => {
       if (payload) dispatch({ type: "SENSOR_INTELLIGENCE_UPDATE", payload });
     };
+    const onWeatherCorrelation = (payload) => {
+      if (payload) dispatch({ type: "WEATHER_CORRELATION_UPDATE", payload });
+    };
 
     socket.on("sensorUpdate", onSensor);
     socket.on("floodRiskUpdate", onRisk);
@@ -777,6 +804,7 @@ function DigitalTwinPage({ initialView = "overview" }) {
     socket.on("fleetOptimizationUpdate", onFleet);
     socket.on("missionCoordinationUpdate", onCoordination);
     socket.on("sensorIntelligenceUpdate", onSensorIntelligence);
+    socket.on("weatherFloodCorrelationUpdate", onWeatherCorrelation);
 
     return () => {
       socket.off("sensorUpdate", onSensor);
@@ -791,6 +819,7 @@ function DigitalTwinPage({ initialView = "overview" }) {
       socket.off("fleetOptimizationUpdate", onFleet);
       socket.off("missionCoordinationUpdate", onCoordination);
       socket.off("sensorIntelligenceUpdate", onSensorIntelligence);
+      socket.off("weatherFloodCorrelationUpdate", onWeatherCorrelation);
     };
   }, []);
 
@@ -872,9 +901,10 @@ function DigitalTwinPage({ initialView = "overview" }) {
     () => ({
       byDrain: state.byDrain,
       bySensor: state.bySensor,
-      sensorIntelligence: state.sensorIntelligence || null
+      sensorIntelligence: state.sensorIntelligence || null,
+      weatherCorrelation: state.weatherCorrelation || null
     }),
-    [state.byDrain, state.bySensor, state.sensorIntelligence]
+    [state.byDrain, state.bySensor, state.sensorIntelligence, state.weatherCorrelation]
   );
 
   const requestView = (mode) =>
@@ -967,6 +997,27 @@ function DigitalTwinPage({ initialView = "overview" }) {
               Mission coordination
               {coordination && coordination.summary.conflicts > 0
                 ? ` · ${coordination.summary.conflicts} conflict(s)`
+                : ""}
+            </div>
+          </div>
+        </div>
+
+        <div className="dt-stat">
+          <div className="dt-stat-icon" style={{ background: "#0284c7" }}>
+            <FaCloudRain />
+          </div>
+          <div>
+            <div className="dt-stat-value" style={{ fontSize: "0.95rem" }}>
+              {state.weatherCorrelation
+                ? state.weatherCorrelation.strongest
+                  ? `r ${state.weatherCorrelation.strongest.r}`
+                  : `${state.weatherCorrelation.signalsReady}/${state.weatherCorrelation.signalsTotal}`
+                : "—"}
+            </div>
+            <div className="dt-stat-label">
+              Weather correlation
+              {state.weatherCorrelation && state.weatherCorrelation.strongest
+                ? ` · ${state.weatherCorrelation.strongest.shortLabel || "signal"}`
                 : ""}
             </div>
           </div>
@@ -1108,6 +1159,7 @@ function DigitalTwinPage({ initialView = "overview" }) {
                   ? state.sensorIntelligence.bySensor[selectedSensor.id] || null
                   : null
               }
+              weatherFloodCorrelation={state.weatherCorrelation || null}
             />
           )}
           {selectedStation && <StationDetails station={selectedStation} />}

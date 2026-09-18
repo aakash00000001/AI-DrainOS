@@ -34,7 +34,8 @@ const INITIAL_STATE = {
   activeIncidentByDrain: {},
   fleet: null,
   byDrain: {},
-  bySensor: {}
+  bySensor: {},
+  weatherCorrelation: null
 };
 
 function DigitalTwinPreview({ onOpen }) {
@@ -97,6 +98,10 @@ function DigitalTwinPreview({ onOpen }) {
     socket.on("dashboardUpdate", onDashboard);
     socket.on("incidentUpdate", onIncident);
     socket.on("fleetOptimizationUpdate", onFleet);
+    const onWeatherCorrelation = (payload) => {
+      if (payload) dispatch({ type: "WEATHER_CORRELATION_UPDATE", payload });
+    };
+    socket.on("weatherFloodCorrelationUpdate", onWeatherCorrelation);
 
     return () => {
       socket.off("sensorUpdate");
@@ -109,6 +114,7 @@ function DigitalTwinPreview({ onOpen }) {
       socket.off("dashboardUpdate");
       socket.off("incidentUpdate");
       socket.off("fleetOptimizationUpdate");
+      socket.off("weatherFloodCorrelationUpdate");
     };
   }, []);
 
@@ -131,8 +137,12 @@ function DigitalTwinPreview({ onOpen }) {
   );
 
   const live = useMemo(
-    () => ({ byDrain: state.byDrain, bySensor: state.bySensor }),
-    [state.byDrain, state.bySensor]
+    () => ({
+      byDrain: state.byDrain,
+      bySensor: state.bySensor,
+      weatherCorrelation: state.weatherCorrelation || null
+    }),
+    [state.byDrain, state.bySensor, state.weatherCorrelation]
   );
 
   const metrics = state.metrics || {};
@@ -167,6 +177,16 @@ function DigitalTwinPreview({ onOpen }) {
             Unassigned{" "}
             <b style={{ color: metrics.fleetUnassignedTasks > 0 ? "#dc2626" : "#16a34a" }}>
               {state.fleet ? state.fleet.summary.unassignedTasks : metrics.fleetUnassignedTasks ?? 0}
+            </b>
+          </span>
+          <span>
+            Weather corr{" "}
+            <b style={{ color: "#0284c7" }}>
+              {state.weatherCorrelation && state.weatherCorrelation.strongest
+                ? `r ${state.weatherCorrelation.strongest.r}`
+                : state.weatherCorrelation
+                  ? `${state.weatherCorrelation.signalsReady}/${state.weatherCorrelation.signalsTotal}`
+                  : "—"}
             </b>
           </span>
         </div>

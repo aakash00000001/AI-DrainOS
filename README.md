@@ -91,6 +91,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **Historical Intelligence & Continuous Learning Foundation**: An **evidence/analytics** layer (`server/services/historicalIntelligenceService.js`) that answers *what the recorded history actually shows* over a bounded window (24h/7d/30d/90d, default 30d) — reading counts, averages, min/max, first/last and real-trend labels per sensor; incident/mission/alert aggregates with real response/resolution timings; descriptive time-of-day patterns; current-vs-historical comparison (live `sensors` vs window average, and a like-for-like vs the immediately preceding window); and a descriptive historical drain-health **label** derived from real evidence thresholds (not the AI Decision score). It is strictly **read-only**, adds **no new tables**, reuses existing records only, and never fabricates: a metric with no samples is `null`, a period with no records is `INSUFFICIENT_DATA`, and missing signals are reported in `data_quality.missing_signals`. Additive surfaces: read-only `/api/historical` (full + focused views), additive dashboard `historicalSummary` and analytics `historical_*` fields. The full Historical Intelligence **UI** is a later sub-update. See [docs/historical-intelligence.md](docs/historical-intelligence.md).
 - **Autonomous Mission Scheduling & Multi-Robot Coordination**: A fleet-wide, deterministic **coordination** layer (`server/services/missionCoordinatorService.js`) that plans *which task matters most, which robot should take it, whether it can get there, and what conflicts/reassignments already exist* across the whole fleet at once. Its coordination priority (decision 0.40 · incident severity 0.25 · flood risk 0.15 · forecast 0.10 · maintenance/vision 0.10) and candidate score (distance 30 · battery 25 · ETA 20 · availability 15 · feasibility 10) are documented weighted sums with honest renormalization — missing signals become `INSUFFICIENT_DATA`/`NO_COORDINATES`/`NO_FEASIBLE_ROUTE`, never fabricated values. `ADVISORY_PLAN` (default) never mutates missions; `AUTONOMOUS_PLAN` only ever dispatches through the existing `missionEngine.dispatchMission` (never a competing mission record). It reports conflicts and reassignments explicitly (`REASSIGNMENT_REQUIRED` with a recommended replacement, never a silent overwrite). Additive surfaces: read-only `/api/missions/coordination` (+ `POST /plan`), additive dashboard `coordination` and analytics `coordination_*` fields, a signature-guarded `missionCoordinationUpdate` event, a Mission Coordination panel/page, and an additive Digital Twin + robot-page overlay. See [docs/mission-coordination.md](docs/mission-coordination.md).
 - **Advanced IoT Sensor Intelligence & Anomaly Detection**: A **descriptive** sensor-integrity layer (`server/services/sensorIntelligenceService.js`) that scores each sensor's health (0–100 → `HEALTHY`/`GOOD`/`DEGRADED`/`POOR`/`CRITICAL`, or `INSUFFICIENT_DATA`) and detects `SPIKE`/`DROP`/`RAPID_CHANGE`/`STUCK_SENSOR`/`STALE_SENSOR`/`MISSING_DATA`/`OUT_OF_RANGE`/`NOISE` signals from the real bounded reading window. Every score carries human-readable reasons and signals; anomalies are worded descriptively ("consistent with…") and never claim a root cause. It only opens incidents for severe integrity problems through the existing `incidentService`, never dispatches robots, and never fabricates a reading. Additive surfaces: read-only `/api/predictions/sensor-intelligence`, `/summary`, `/anomalies`, `/anomalies/:sensorId`, `/drain/:drainId`, `/:sensorId`, additive dashboard `sensorIntelligence`/`sensorHealthSummary`/`sensorAnomalySummary` and analytics `sensor_*` fields (+ `GET /api/analytics/sensor-intelligence`), a signature-guarded `sensorIntelligenceUpdate` event, a Sensor Intelligence panel/page, and an additive Digital Twin sensor overlay. See [docs/sensor-intelligence.md](docs/sensor-intelligence.md).
+- **Weather + Flood Correlation Intelligence**: A **descriptive** weather layer (`server/services/weatherFloodCorrelationService.js`) that aligns **real** weather observations (OpenWeatherMap, metric units, fetched forward-only and throttled into the new `weather_observations` table — never backfilled or seeded) with **real** `sensor_readings` water levels over a bounded window (default 24 h, max 168 h) and reports a Pearson correlation per signal (`rainfall`/`humidity`/`temperature`/`pressure`/`wind` vs water level) with a 30-minute timestamp tolerance and optional 0/15/30/60-min lag. Results are strictly descriptive — every payload ships a non-causal disclaimer — and honest states only: `WEATHER_UNAVAILABLE` (no observations), `INSUFFICIENT_DATA` (< 20 aligned pairs), and always-`NOT_AVAILABLE` for `weather_flood_risk`/`weather_forecast` (those outputs are not persisted, never recomputed). A 4-bucket trend (`strengthening`/`weakening`/`stable`/`insufficient`) adds timing context. Additive surfaces: read-only `/api/predictions/weather-correlation` (`/`, `/summary`, `/signals`, `/trends`, `/drains`, `/drain/:drainId`, `/:signal`), additive dashboard `weatherCorrelation` and analytics `weather_*` fields (+ `GET /api/analytics/weather-correlation`), a signature + throttle-guarded `weatherFloodCorrelationUpdate` event, a Weather Correlation panel/page, and an additive Digital Twin overlay. `missionEngine.js` untouched; no incidents are opened from a correlation. See [docs/weather-flood-correlation.md](docs/weather-flood-correlation.md).
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -456,6 +457,47 @@ tables. Highlights:
 📄 Full documentation (health bands, anomaly rules, incident policy, API,
 socket, Twin overlay, limitations): [docs/sensor-intelligence.md](docs/sensor-intelligence.md).
 
+## 15l. Weather + Flood Correlation Intelligence
+The weather-flood correlation layer (`server/services/weatherFloodCorrelationService.js`)
+is a **descriptive** layer that measures the linear association between **real** weather
+observations and **real** recorded sensor water levels. It is **not** a flood-risk or
+forecast engine and never replaces them — additive, honest and read-only. Highlights:
+
+- **Real weather, forward only**: snapshots come from the existing OpenWeatherMap
+  integration (metric units), are stored in the new `weather_observations` table
+  (migration `database/migrations/007_weather_observations.sql`) only **as they are
+  fetched**, throttled to one new snapshot per 10 minutes with in-flight + staleness
+  guards — never backfilled, never seeded.
+- **Timestamp-aligned correlation**: a bounded window (default 24 h, max 168 h) pairs each
+  weather observation to its nearest sensor reading within 30 minutes; `MIN_PAIRS = 20`
+  aligned pairs are required before a Pearson `r` is reported (rounded to 3 decimals).
+- **Five computed signals, two honest gaps**: `rainfall_water_level`,
+  `humidity_water_level`, `temperature_water_level`, `pressure_water_level`,
+  `wind_water_level` vs water level; `weather_flood_risk` and `weather_forecast` are
+  always `NOT_AVAILABLE` because historical risk/forecast outputs are not persisted
+  (never recomputed or invented).
+- **Strength + direction bands**: `VERY_WEAK` … `VERY_STRONG` (0.19 / 0.39 / 0.59 / 0.79
+  boundaries) and `POSITIVE` / `NEGATIVE` / `NONE` (±0.05 epsilon) — with human-readable
+  wording that is always descriptive and **never causal**.
+- **Timing + trends**: optional 0/15/30/60-min rainfall lag on `?lag=`, and a 4-bucket
+  first-vs-last `r` trend (`strengthening` / `weakening` / `stable` / `insufficient`)
+  with per-bucket `r` / `direction` / `strength`.
+- **Bounded refresh + guarded emission**: weather refreshes are capped to one fetch per
+  10 minutes (never per MQTT packet), and the `weatherFloodCorrelationUpdate` event is
+  signature + throttle guarded (no emission on every 5-second tick).
+- **Additive surfaces**: read-only `/api/predictions/weather-correlation` (`/`, `/summary`,
+  `/signals`, `/trends`, `/drains`, `/drain/:drainId`, `/:signal`), an additive
+  `weatherCorrelation` object on `/api/dashboard`, additive `weather_*` fields +
+  `GET /api/analytics/weather-correlation`, a Weather Correlation panel/page, and an
+  additive Digital Twin overlay (weather context + correlation badges, graceful
+  degradation when the API/event is unavailable).
+- **Integrity guarantees**: `missionEngine.js` untouched, existing formulas untouched, no
+  incidents opened from a correlation, no new dependencies, no second Socket.IO server and
+  no duplicate socket listeners.
+
+📄 Full documentation (advisory contract, data requirements, signals, refresh rules, API,
+socket, Twin overlay, tests, limitations): [docs/weather-flood-correlation.md](docs/weather-flood-correlation.md).
+
 ## 16. Manual Mission Control
 UI interface (`pages/MissionControl.jsx`) enabling operators to manually select specific drains and dispatch available robots on demand.
 
@@ -502,6 +544,7 @@ and the emergency incidents table via `database/migrations/005_incidents.sql`.
 - `fleetOptimizationUpdate`: Emitted (signature-guarded, only on meaningful change) by the fleet optimization service with `{ status, summary, tasks, recommendations, robots, unassigned, generated_at }`. Used by the Fleet Optimization panel/page, the app-level toast (warning on unassigned tasks) and the Digital Twin fleet overlay (see [docs/fleet-optimization.md](docs/fleet-optimization.md)).
 - `missionCoordinationUpdate`: Emitted (signature-guarded, only on meaningful change; wired into the live 5-second loop) by the mission coordination service with `{ status, mode, summary, assignments, unassigned, conflicts, reassignment_required, generated_at }`. Used by the Mission Coordination panel/page, the app-level toast (warning on unassigned tasks / conflicts) and the Digital Twin + robot-page coordination overlay (see [docs/mission-coordination.md](docs/mission-coordination.md)).
 - `sensorIntelligenceUpdate`: Emitted (signature-guarded, only on meaningful change; wired into the live 5-second loop and the MQTT pipeline) by the sensor intelligence service with `{ status, generatedAt, summary, sensors, drains, anomalies, disclaimer }`. Used by the Sensor Intelligence panel/page, the app-level toast (warning on critical sensors) and the Digital Twin sensor overlay (see [docs/sensor-intelligence.md](docs/sensor-intelligence.md)).
+- `weatherFloodCorrelationUpdate`: Emitted (signature + throttle guarded; wired into the live 5-second loop and the MQTT-triggered guarded refresh path) by the weather flood correlation service with the summary payload `{ status, generated_at, window_hours, disclaimer, weather_data_quality, signals_ready, signals_total, signals, strongest, latest_weather, message }`. Used by the Weather Correlation panel/page, the app-level info toast and the Digital Twin weather overlay (see [docs/weather-flood-correlation.md](docs/weather-flood-correlation.md)).
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -598,7 +641,7 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **411 tests** covering auth, RBAC, drains, robots, missions,
+The suite currently includes **495 tests** covering auth, RBAC, drains, robots, missions,
 alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
 database mapping, AI prediction, socket emission, alert escalation, and broker-failure
 resilience), the flood risk engine (normalization, trend, classification, historical
@@ -639,7 +682,14 @@ explicit conflict detection, reassignment plans with a recommended replacement,
 advisory-only vs autonomous (missionEngine-dispatch) modes, the summary/analytics builders,
 signature-guarded `missionCoordinationUpdate` emission, the full `/api/missions/coordination`
 REST surface with auth + mode validation on `POST /plan`, and the additive Digital Twin +
-robot-page coordination overlay).
+robot-page coordination overlay), the descriptive sensor intelligence layer (health banding,
+all eight anomaly signals, signature-guarded emission, incident dedup/cooldown, additive
+dashboard/analytics shapes), and the weather + flood correlation layer (timestamp-aligned
+real weather/reading pairs, bounded windows, honest `WEATHER_UNAVAILABLE` /
+`INSUFFICIENT_DATA` / `NOT_AVAILABLE` states, non-causal wording, throttled forward-only
+weather refresh, throttle + signature-guarded `weatherFloodCorrelationUpdate` emission, the
+full `/api/predictions/weather-correlation` REST surface, and the additive Digital Twin
+weather overlay).
 
 > Note: `server/tests/floodForecast.test.js` has one known timing-sensitive test that can
 > intermittently fail in a full-suite run; it passes in isolation and on rerun and is
@@ -711,7 +761,8 @@ AI-DrainOS/
 │   ├── fleet-optimization.md
 │   ├── historical-intelligence.md
 │   ├── mission-coordination.md
-│   └── sensor-intelligence.md
+│   ├── sensor-intelligence.md
+│   └── weather-flood-correlation.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example

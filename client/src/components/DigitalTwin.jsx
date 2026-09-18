@@ -321,6 +321,7 @@ const SensorView = memo(function SensorView({
   stale,
   missingData,
   latestAnomaly,
+  weatherContext,
   selected,
   compact,
   onSelect
@@ -394,6 +395,24 @@ const SensorView = memo(function SensorView({
                 {latestAnomaly.type}
               </div>
             )}
+            {/* Weather + flood correlation overlay (Update #23) —
+                additive, read-only, real data only. */}
+            {weatherContext && weatherContext.latestWeather && (
+              <div style={{ color: "#38bdf8", fontWeight: 400 }}>
+                ☁ {weatherContext.latestWeather.weatherMain || "weather"}
+                {weatherContext.latestWeather.temperature != null
+                  ? ` · ${weatherContext.latestWeather.temperature}°C`
+                  : ""}
+              </div>
+            )}
+            {weatherContext &&
+              weatherContext.strongest &&
+              weatherContext.strongest.r != null && (
+                <div style={{ color: "#60a5fa", fontWeight: 400 }}>
+                  corr r {weatherContext.strongest.r} ·{" "}
+                  {weatherContext.strongest.shortLabel || weatherContext.strongest.signal}
+                </div>
+              )}
           </div>
         </Html>
       )}
@@ -804,6 +823,10 @@ function DigitalTwin({
       ? live.sensorIntelligence.bySensor
       : EMPTY_OBJECT;
 
+  // Weather + flood correlation overlay (Update #23) — additive +
+  // read-only. Missing data simply draws no weather badge.
+  const weatherOverlay = live && live.weatherCorrelation ? live.weatherCorrelation : null;
+
   const fusedDrains = useMemo(
     () => fuseDrains(drains, live.byDrain, decisions, incidentsByDrain),
     [drains, live.byDrain, decisions, incidentsByDrain]
@@ -934,6 +957,7 @@ function DigitalTwin({
                 stale={intel ? intel.stale : Boolean(sensor.stale)}
                 missingData={intel ? intel.missingData : Boolean(sensor.missingData)}
                 latestAnomaly={intel ? intel.latestAnomaly : sensor.latestAnomaly || null}
+                weatherContext={weatherOverlay}
                 selected={selected && selected.type === "sensor" && Number(selected.id) === Number(sensor.id)}
                 compact={compact}
                 onSelect={onSelect}
