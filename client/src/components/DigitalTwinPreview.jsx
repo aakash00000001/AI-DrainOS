@@ -35,7 +35,8 @@ const INITIAL_STATE = {
   fleet: null,
   byDrain: {},
   bySensor: {},
-  weatherCorrelation: null
+  weatherCorrelation: null,
+  decisionAudit: null
 };
 
 function DigitalTwinPreview({ onOpen }) {
@@ -102,6 +103,10 @@ function DigitalTwinPreview({ onOpen }) {
       if (payload) dispatch({ type: "WEATHER_CORRELATION_UPDATE", payload });
     };
     socket.on("weatherFloodCorrelationUpdate", onWeatherCorrelation);
+    const onDecisionAudit = (payload) => {
+      if (payload) dispatch({ type: "DECISION_AUDIT_UPDATE", payload });
+    };
+    socket.on("decisionAuditUpdate", onDecisionAudit);
 
     return () => {
       socket.off("sensorUpdate");
@@ -115,6 +120,7 @@ function DigitalTwinPreview({ onOpen }) {
       socket.off("incidentUpdate");
       socket.off("fleetOptimizationUpdate");
       socket.off("weatherFloodCorrelationUpdate");
+      socket.off("decisionAuditUpdate");
     };
   }, []);
 
@@ -144,6 +150,8 @@ function DigitalTwinPreview({ onOpen }) {
     }),
     [state.byDrain, state.bySensor, state.weatherCorrelation]
   );
+
+  const decisionAudit = state.decisionAudit || null;
 
   const metrics = state.metrics || {};
   const critical = fusedDrains.filter(
@@ -187,6 +195,14 @@ function DigitalTwinPreview({ onOpen }) {
                 : state.weatherCorrelation
                   ? `${state.weatherCorrelation.signalsReady}/${state.weatherCorrelation.signalsTotal}`
                   : "—"}
+            </b>
+          </span>
+          <span>
+            Audit{" "}
+            <b style={{ color: "#0d9488" }}>
+              {decisionAudit && decisionAudit.total != null
+                ? decisionAudit.total
+                : "—"}
             </b>
           </span>
         </div>

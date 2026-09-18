@@ -26,7 +26,8 @@ import {
   FaSearch,
   FaBolt,
   FaNetworkWired,
-  FaCloudRain
+  FaCloudRain,
+  FaClipboardList
 } from "react-icons/fa";
 
 import DigitalTwin from "./DigitalTwin";
@@ -63,6 +64,7 @@ const INITIAL_STATE = {
   coordination: null,
   sensorIntelligence: null,
   weatherCorrelation: null,
+  decisionAudit: null,
   byDrain: {},
   bySensor: {}
 };
@@ -791,6 +793,9 @@ function DigitalTwinPage({ initialView = "overview" }) {
     const onWeatherCorrelation = (payload) => {
       if (payload) dispatch({ type: "WEATHER_CORRELATION_UPDATE", payload });
     };
+    const onDecisionAudit = (payload) => {
+      if (payload) dispatch({ type: "DECISION_AUDIT_UPDATE", payload });
+    };
 
     socket.on("sensorUpdate", onSensor);
     socket.on("floodRiskUpdate", onRisk);
@@ -805,6 +810,7 @@ function DigitalTwinPage({ initialView = "overview" }) {
     socket.on("missionCoordinationUpdate", onCoordination);
     socket.on("sensorIntelligenceUpdate", onSensorIntelligence);
     socket.on("weatherFloodCorrelationUpdate", onWeatherCorrelation);
+    socket.on("decisionAuditUpdate", onDecisionAudit);
 
     return () => {
       socket.off("sensorUpdate", onSensor);
@@ -820,6 +826,7 @@ function DigitalTwinPage({ initialView = "overview" }) {
       socket.off("missionCoordinationUpdate", onCoordination);
       socket.off("sensorIntelligenceUpdate", onSensorIntelligence);
       socket.off("weatherFloodCorrelationUpdate", onWeatherCorrelation);
+      socket.off("decisionAuditUpdate", onDecisionAudit);
     };
   }, []);
 
@@ -1032,6 +1039,25 @@ function DigitalTwinPage({ initialView = "overview" }) {
               {metrics.lastUpdated ? formatTime(metrics.lastUpdated) : "—"}
             </div>
             <div className="dt-stat-label">Last update</div>
+          </div>
+        </div>
+
+        <div className="dt-stat">
+          <div className="dt-stat-icon" style={{ background: "#0d9488" }}>
+            <FaClipboardList />
+          </div>
+          <div>
+            <div className="dt-stat-value" style={{ fontSize: "0.95rem" }}>
+              {state.decisionAudit && state.decisionAudit.total != null
+                ? `${state.decisionAudit.recorded ? "changed" : "audited"} · ${state.decisionAudit.total}`
+                : "—"}
+            </div>
+            <div className="dt-stat-label">
+              Decision audit
+              {state.decisionAudit && state.decisionAudit.recentAudits.length > 0
+                ? ` · latest ${state.decisionAudit.recentAudits[0].decisionType}`
+                : ""}
+            </div>
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@
 -- Run via: node database/setup.js   (or psql -f)
 -- ============================================================
 
+DROP TABLE IF EXISTS decision_audits CASCADE;
 DROP TABLE IF EXISTS weather_observations CASCADE;
 DROP TABLE IF EXISTS sensor_readings CASCADE;
 DROP TABLE IF EXISTS drain_vision_inspections CASCADE;
@@ -316,3 +317,62 @@ CREATE TABLE reports (
   critical_alerts INTEGER DEFAULT 0,
   generated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============================================================
+-- DECISION AUDITS (Explainable AI + Decision Audit)
+--
+-- Append-only, read-only record of what the existing AI decision
+-- services actually returned. It never recomputes a decision or
+-- replaces a formula, and only meaningful changes are recorded
+-- (no row per live-tick). UPDATE/DELETE are blocked by trigger.
+-- Mirrored by database/migrations/008_decision_audits.sql.
+-- ============================================================
+
+CREATE TABLE decision_audits (
+  id SERIAL PRIMARY KEY,
+  decision_id VARCHAR(120) NOT NULL UNIQUE,
+  decision_type VARCHAR(40) NOT NULL,
+  entity_type VARCHAR(30) NOT NULL,
+  entity_id INTEGER NOT NULL,
+  drain_id INTEGER,
+  robot_id INTEGER,
+  timestamp TIMESTAMP NOT NULL,
+  status VARCHAR(40),
+  level VARCHAR(20),
+  score REAL,
+  inputs JSONB,
+  contributions JSONB,
+  modifiers JSONB,
+  evidence JSONB,
+  explanation TEXT,
+  limitations TEXT,
+  signature VARCHAR(64) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_decision_audits_timestamp
+  ON decision_audits(timestamp DESC);
+
+CREATE INDEX idx_decision_audits_drain_id
+  ON decision_audits(drain_id);
+
+CREATE INDEX idx_decision_audits_decision_type
+  ON decision_audits(decision_type);
+
+CREATE INDEX idx_decision_audits_entity
+  ON decision_audits(entity_type, entity_id);
+
+CREATE OR REPLACE FUNCTION prevent_decision_audit_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'decision_audits is append-only; UPDATE and DELETE are not allowed';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_decision_audits_append_only
+  ON decision_audits;
+
+CREATE TRIGGER trg_decision_audits_append_only
+  BEFORE UPDATE OR DELETE ON decision_audits
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_decision_audit_mutation();

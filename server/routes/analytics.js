@@ -14,6 +14,7 @@ const historicalIntelligence = require("../services/historicalIntelligenceServic
 const missionCoordinator = require("../services/missionCoordinatorService");
 const sensorIntelligence = require("../services/sensorIntelligenceService");
 const weatherFloodCorrelation = require("../services/weatherFloodCorrelationService");
+const decisionAudit = require("../services/decisionAuditService");
 
 router.get("/", async (req, res) => {
 
@@ -132,6 +133,16 @@ router.get("/", async (req, res) => {
       weatherAnalytics = await weatherFloodCorrelation.getWeatherAnalytics();
     } catch (weatherErr) {
       console.log("⚠️ Weather correlation analytics skipped:", weatherErr.message);
+    }
+
+    // Decision audit analytics (Update #24) are additive and
+    // best-effort. Counts come straight from the append-only trail.
+    let auditAnalytics = null;
+
+    try {
+      auditAnalytics = await decisionAudit.getAnalytics();
+    } catch (auditErr) {
+      console.log("⚠️ Decision audit analytics skipped:", auditErr.message);
     }
 
     res.json({
@@ -302,7 +313,12 @@ router.get("/", async (req, res) => {
         : { status: "NO_WEATHER_DATA", observation_count: 0 },
       weather_observation_count: weatherAnalytics ? weatherAnalytics.weather_observation_count : 0,
       weather_signals_ready: weatherAnalytics ? weatherAnalytics.weather_signals_ready : 0,
-      weather_signals_total: weatherAnalytics ? weatherAnalytics.weather_signals_total : 7
+      weather_signals_total: weatherAnalytics ? weatherAnalytics.weather_signals_total : 7,
+      audit_summary: auditAnalytics ? auditAnalytics.audit_summary : null,
+      audit_decision_counts: auditAnalytics ? auditAnalytics.audit_decision_counts : {},
+      audit_level_counts: auditAnalytics ? auditAnalytics.audit_level_counts : {},
+      audit_recent_changes: auditAnalytics ? auditAnalytics.audit_recent_changes : [],
+      audit_retention: auditAnalytics ? auditAnalytics.audit_retention : null
     });
 
   }

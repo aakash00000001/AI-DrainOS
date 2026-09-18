@@ -25,6 +25,8 @@ import SensorIntelligencePanel from "./components/SensorIntelligencePanel";
 import SensorIntelligencePage from "./components/SensorIntelligencePage";
 import WeatherFloodCorrelationPanel from "./components/WeatherFloodCorrelationPanel";
 import WeatherFloodCorrelationPage from "./components/WeatherFloodCorrelationPage";
+import DecisionAuditPanel from "./components/DecisionAuditPanel";
+import DecisionAuditPage from "./components/DecisionAuditPage";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -210,6 +212,18 @@ function App() {
 
     });
 
+    socket.on("decisionAuditUpdate", (payload) => {
+
+      if (!payload || !payload.recorded) return;
+
+      // Only surface meaningful changes that were actually recorded;
+      // deduplicated / non-material checks stay silent.
+      toast.info(
+        `📋 Decision audit recorded: ${payload.counts?.byDecisionType || payload.decisionType || "AI decision"} change -> ${payload.level || "updated"}`
+      );
+
+    });
+
     return () => {
 
       socket.off("connect");
@@ -225,6 +239,7 @@ function App() {
       socket.off("missionCoordinationUpdate");
       socket.off("sensorIntelligenceUpdate");
       socket.off("weatherFloodCorrelationUpdate");
+      socket.off("decisionAuditUpdate");
 
     };
 
@@ -368,6 +383,10 @@ function App() {
 
           <WeatherFloodCorrelationPanel
             onOpen={() => handleNavigate("weathercorrelation")}
+          />
+
+          <DecisionAuditPanel
+            onOpen={() => handleNavigate("decisionaudit")}
           />
 
           <DigitalTwinPreview
@@ -524,6 +543,24 @@ function App() {
           <h2>⛅ Weather + Flood Correlation</h2>
 
           <WeatherFloodCorrelationPage />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Decision Audit / Explainable AI (Update #24)
+    if (activePage === "decisionaudit") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>📋 Decision Audit</h2>
+
+          <DecisionAuditPage />
 
         </div>
 

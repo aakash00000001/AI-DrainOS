@@ -19,6 +19,7 @@
 //   GET /api/predictions/decision/:id  (on-demand)
 //   GET /api/predictions/vision/:id    (on-demand)
 //   GET /api/predictions/weather-correlation (additive, Update #23)
+//   GET /api/audit/recent                 (additive, Update #24)
 //
 // Promise.allSettled is used deliberately: a failing endpoint must
 // degrade to an honest "data unavailable" scene, never a crash.
@@ -41,7 +42,8 @@ import {
   normalizeFleetOptimization,
   normalizeMissionCoordination,
   normalizeSensorIntelligence,
-  normalizeWeatherFloodCorrelation
+  normalizeWeatherFloodCorrelation,
+  normalizeDecisionAudit
 } from "./digitalTwinUtils.mjs";
 
 function coordinatePoints(drains, robots, stations) {
@@ -71,7 +73,8 @@ export async function loadDigitalTwinData() {
     fleetRes,
     coordinationRes,
     sensorIntelligenceRes,
-    weatherCorrelationRes
+    weatherCorrelationRes,
+    decisionAuditRes
   ] = await Promise.allSettled([
     axios.get(`${API_URL}/drains`),
     axios.get(`${API_URL}/sensors`),
@@ -83,7 +86,8 @@ export async function loadDigitalTwinData() {
     axios.get(`${API_URL}/fleet-optimization`),
     axios.get(`${API_URL}/missions/coordination`),
     axios.get(`${API_URL}/predictions/sensor-intelligence`),
-    axios.get(`${API_URL}/predictions/weather-correlation`)
+    axios.get(`${API_URL}/predictions/weather-correlation`),
+    axios.get(`${API_URL}/audit/recent`)
   ]);
 
   const rawDrains = drainsRes.status === "fulfilled" ? asArray(drainsRes.value.data) : [];
@@ -221,6 +225,14 @@ export async function loadDigitalTwinData() {
       ? normalizeWeatherFloodCorrelation(weatherCorrelationRes.value.data)
       : null;
 
+  // Decision audit overlay (Update #24) — additive, READ ONLY.
+  // Carries the summary of the append-only audit trail; a missing/
+  // failed endpoint degrades to null and no audit badge is drawn.
+  const decisionAudit =
+    decisionAuditRes.status === "fulfilled"
+      ? normalizeDecisionAudit(decisionAuditRes.value.data)
+      : null;
+
   if (sensorIntelligence) {
     for (const sensor of sensors) {
       const intel = sensorIntelligence.bySensor[sensor.id];
@@ -254,6 +266,9 @@ export async function loadDigitalTwinData() {
     weatherSignalsTotal: weatherCorrelation ? weatherCorrelation.signalsTotal : 0,
     weatherObservationCount: weatherCorrelation && weatherCorrelation.latestWeather ? 1 : 0,
     weatherStrongestR: weatherCorrelation && weatherCorrelation.strongest ? weatherCorrelation.strongest.r : null,
+    decisionAuditRecorded: decisionAudit ? decisionAudit.total : 0,
+    decisionAuditCritical: decisionAudit && decisionAudit.byLevel ? (decisionAudit.byLevel.CRITICAL || 0) + (decisionAudit.byLevel.HIGH || 0) : 0,
+    decisionAuditGeneratedAt: decisionAudit ? decisionAudit.generatedAt : null,
     dataSources: {
       drains: drainsRes.status === "fulfilled",
       sensors: sensorsRes.status === "fulfilled",
@@ -265,7 +280,8 @@ export async function loadDigitalTwinData() {
       fleetOptimization: fleetRes.status === "fulfilled",
       missionCoordination: coordinationRes.status === "fulfilled",
       sensorIntelligence: sensorIntelligenceRes.status === "fulfilled",
-      weatherCorrelation: weatherCorrelationRes.status === "fulfilled"
+      weatherCorrelation: weatherCorrelationRes.status === "fulfilled",
+      decisionAudit: decisionAuditRes.status === "fulfilled"
     }
   });
 
@@ -280,7 +296,8 @@ export async function loadDigitalTwinData() {
     fleetRes.status !== "fulfilled" && "fleetOptimization",
     coordinationRes.status !== "fulfilled" && "missionCoordination",
     sensorIntelligenceRes.status !== "fulfilled" && "sensorIntelligence",
-    weatherCorrelationRes.status !== "fulfilled" && "weatherCorrelation"
+    weatherCorrelationRes.status !== "fulfilled" && "weatherCorrelation",
+    decisionAuditRes.status !== "fulfilled" && "decisionAudit"
   ].filter(Boolean);
 
   return {
@@ -297,6 +314,7 @@ export async function loadDigitalTwinData() {
     coordination,
     sensorIntelligence,
     weatherCorrelation,
+    decisionAudit,
     origin,
     metrics,
     loadError

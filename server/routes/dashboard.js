@@ -14,6 +14,7 @@ const historicalIntelligence = require("../services/historicalIntelligenceServic
 const missionCoordinator = require("../services/missionCoordinatorService");
 const sensorIntelligence = require("../services/sensorIntelligenceService");
 const weatherFloodCorrelation = require("../services/weatherFloodCorrelationService");
+const decisionAudit = require("../services/decisionAuditService");
 
 router.get("/", async (req, res) => {
   try {
@@ -173,6 +174,26 @@ router.get("/", async (req, res) => {
       console.log("⚠️ Dashboard weather correlation skipped:", weatherErr.message);
     }
 
+    // Decision audit (Update #24) — additive + best-effort. Read-only
+    // explainability counters over the append-only trail; it never
+    // recomputes a decision.
+    let decisionAuditSummary = {
+      decisionAudit: {
+        status: "NO_AUDIT_DATA",
+        total: 0,
+        byLevel: {},
+        recentChanges: []
+      }
+    };
+
+    try {
+      decisionAuditSummary = {
+        decisionAudit: await decisionAudit.getDashboardSummary()
+      };
+    } catch (auditErr) {
+      console.log("⚠️ Dashboard decision audit skipped:", auditErr.message);
+    }
+
     res.json({
       totalDrains: Number(totalDrains.rows[0].count),
       activeRobots: Number(activeRobots.rows[0].count),
@@ -182,7 +203,8 @@ router.get("/", async (req, res) => {
       historicalSummary,
       coordination,
       ...sensorIntelligenceSummary,
-      ...weatherCorrelationSummary
+      ...weatherCorrelationSummary,
+      ...decisionAuditSummary
     });
 
   } catch (err) {

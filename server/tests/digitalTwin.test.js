@@ -806,6 +806,87 @@ test("reducer: WEATHER_CORRELATION_UPDATE stores the overlay and ignores invalid
   );
 });
 
+test("reducer: DECISION_AUDIT_UPDATE stores the compact overlay and ignores invalid payloads", () => {
+  const payload = {
+    status: "READY",
+    generated_at: "2026-09-18T08:00:00Z",
+    counts: {
+      total: 3,
+      byDecisionType: { AI_DECISION: 3 },
+      byLevel: { CRITICAL: 1, LOW: 2 }
+    },
+    recorded: 1,
+    checked: 2,
+    recent_changes: [
+      {
+        decisionType: "AI_DECISION",
+        entityType: "DRAIN",
+        entityId: 5,
+        drainId: 5,
+        status: "READY",
+        level: "CRITICAL",
+        score: 88,
+        timestamp: "2026-09-18T08:00:00Z"
+      }
+    ]
+  };
+
+  const state = u.digitalTwinReducer({ decisionAudit: null }, {
+    type: "DECISION_AUDIT_UPDATE",
+    payload
+  });
+  assert.equal(state.decisionAudit.status, "READY");
+  assert.equal(state.decisionAudit.total, 3);
+  assert.equal(state.decisionAudit.byLevel.CRITICAL, 1);
+  assert.equal(state.decisionAudit.recorded, true);
+  assert.equal(state.decisionAudit.recentAudits.length, 0);
+  assert.equal(state.decisionAudit.recentChanges[0].level, "CRITICAL");
+  assert.equal(state.decisionAudit.recentChanges[0].drainId, 5);
+  assert.equal(state.decisionAudit.recentChanges[0].score, 88);
+
+  const unchanged = { decisionAudit: null };
+  assert.equal(
+    u.digitalTwinReducer(unchanged, { type: "DECISION_AUDIT_UPDATE", payload: null }),
+    unchanged,
+    "an invalid payload must not clobber existing decision-audit state"
+  );
+});
+
+test("reducer: SET_DATA carries the additive decisionAudit overlay without breaking the scene", () => {
+  const state = u.digitalTwinReducer(
+    { decisionAudit: null },
+    {
+      type: "SET_DATA",
+      drains: [],
+      sensors: [],
+      robots: [],
+      chargingStations: [],
+      routes: [],
+      missions: [],
+      origin: null,
+      metrics: { totalDrains: 0 },
+      loadError: [],
+      decisionAudit: {
+        status: "READY",
+        generatedAt: "2026-09-18T08:00:00Z",
+        total: 4,
+        recentChanges: [],
+        recentAudits: [
+          {
+            decisionType: "FORECAST",
+            entityType: "DRAIN",
+            entityId: 1,
+            level: "MODERATE"
+          }
+        ]
+      }
+    }
+  );
+  assert.equal(state.decisionAudit.total, 4);
+  assert.equal(state.decisionAudit.recentAudits[0].decisionType, "FORECAST");
+  assert.equal(u.normalizeDecisionAudit(null), null);
+});
+
 test("GET /api/predictions/weather-correlation is consumable by the Digital Twin overlay", async () => {
   const res = await request(app).get("/api/predictions/weather-correlation");
   assert.equal(res.status, 200);

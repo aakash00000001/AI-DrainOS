@@ -330,6 +330,84 @@ the MQTT pipeline only triggers the guarded refresh path.
 
 ---
 
+## Decision Audit API (`/api/audit`)
+
+An append-only, read-only trail of what the existing engines decided and why — a
+restatement of **current** engine output, never a recomputation, never a dispatch (see
+[decision-audit.md](decision-audit.md)). GET routes are Public; `POST /snapshot` requires
+`Bearer <token>` and is the only write path.
+
+### `GET /api/audit`
+- **Access**: Public / Authenticated
+- **Query Params**: `?page=` (default 1), `?limit=` (default 20, hard cap 100),
+  `?decisionType=`, `?drainId=`, `?robotId=` (all optional).
+- **Response** (200 OK): `{ "status": "READY", "page", "limit", "count", "audits": [...] }`.
+  Each row carries `id`, `decision_id`, `decision_type`, `entity_type`, `entity_id`,
+  `drain_id`, `robot_id`, `timestamp`, `status`, `level`, `score`, `inputs`,
+  `contributions`, `modifiers`, `evidence`, `explanation`, `limitations`, `signature`,
+  `created_at`.
+- **Response** (400): invalid decision type / drainId / robotId.
+
+### `GET /api/audit/summary`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status": "READY", "summary": { total, byLevel, byDecisionType, oldest, newest, generatedAt } }`.
+
+### `GET /api/audit/recent`
+- **Access**: Public / Authenticated
+- **Query Params**: `?limit=` (default 10, hard cap 100).
+- **Response** (200 OK): `{ "status": "READY", "limit", "audits": [...] }`.
+
+### `GET /api/audit/drain/:drainId`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status": "READY", "drainId", "count", "audits": [...] }`.
+- **Response** (400): invalid drain id.
+
+### `GET /api/audit/robot/:robotId`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status": "READY", "robotId", "count", "audits": [...] }`.
+
+### `GET /api/audit/type/:decisionType`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status": "READY", "decisionType", "count", "audits": [...] }`.
+- **Response** (400): invalid decision type (must be one of the 10 `DECISION_TYPES`).
+
+### `GET /api/audit/decision/:decisionId`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status": "READY", "audit": {...} }`.
+- **Response** (404): `{ "error": "Decision audit not found" }`.
+
+### `GET /api/audit/:id`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status": "READY", "audit": {...} }`.
+- **Response** (404): `{ "error": "Decision audit not found" }`.
+
+### `GET /api/audit/:id/explanation`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status": "READY", "explanation": {...} }` — the rendered
+  `WHY / WHAT / MISSING / HOW / EVIDENCE / LIMITATIONS` explanation.
+- **Response** (404): `{ "error": "Decision audit not found" }`.
+
+### `POST /api/audit/snapshot`
+- **Access**: `Bearer <token>` (authMiddleware).
+- **Body**: `{ decisionType, drainId?, robotId?, incidentId?, signal? }` — `AI_DECISION`,
+  `FLOOD_RISK`, `FORECAST`, `MAINTENANCE`, `SENSOR_INTELLIGENCE`, `ROBOT_ROUTE` require a
+  valid `drainId`; `INCIDENT` requires a valid `incidentId`.
+- **Response** (201): `RECORDED` — `{ "status": "READY", "recorded": true, "reason": "RECORDED", "audit": {...} }`.
+- **Response** (200): deduped — `{ "recorded": false, "reason": "UNCHANGED"|"NOT_MATERIAL", "audit": {...} }`.
+- **Response** (422): `{ "error": "No snapshot could be built from the current system state - the existing engine returned no data for this scope." }`.
+- **Response** (400): invalid decision type / ids / missing required drainId or incidentId.
+- Honesty note: this records the **current** state of the existing engine; it never
+  dispatches robots and never opens incidents.
+
+### Socket event
+The service emits `decisionAuditUpdate` through the **existing shared** hub (throttled to
+≥ 60 s, signature-guarded, and only when meaningful rows were recorded) with
+`{ status, generated_at, counts: { total, byDecisionType, byLevel }, recorded, checked,
+recent_changes, dwell }`. No second Socket.IO server is created; the Digital Twin expects
+`payload.recorded` truthy before applying the reducer event.
+
+---
+
 ## Incidents API (`/api/incidents`)
 
 An auditable emergency lifecycle: `OPEN → ACKNOWLEDGED → RESPONDING → RESOLVED`.
@@ -478,7 +556,7 @@ Every real change emits `incidentUpdate` through the existing shared hub:
   - `total_cleanings` / `robot_operations` / `total_missions`: mission records.
   - `blockages_detected`: open Critical alerts.
   - `flood_predictions`: sensor readings count.
-  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)), additive fleet fields `fleet_status`, `fleet_total_robots`, `fleet_available_robots`, `fleet_busy_robots`, `fleet_charging_robots`, `fleet_low_battery_robots`, `fleet_utilization`, `fleet_active_tasks`, `fleet_assigned_tasks`, `fleet_unassigned_tasks`, `fleet_assignment_coverage`, `fleet_average_response_minutes` (see [fleet-optimization.md](fleet-optimization.md)), and additive historical fields `historical_period`, `historical_incident_count`, `historical_resolved_incident_count`, `historical_mission_count`, `historical_alert_count`, `historical_sensor_reading_count`, `historical_recurrent_drain_count`, `historical_degraded_drain_count`, `historical_data_quality`, `historical_recent_trend`, `historical_top_recurring_drains` (see [historical-intelligence.md](historical-intelligence.md)), and additive coordination fields `coordination_status`, `coordination_pending_tasks`, `coordination_assigned_tasks`, `coordination_unassigned_tasks`, `coordination_available_robots`, `coordination_busy_robots`, `coordination_charging_robots`, `coordination_conflict_count`, `coordination_reassignment_required`, `coordination_average_task_priority`, `coordination_average_candidate_score` (see [mission-coordination.md](mission-coordination.md)), and additive weather fields `weather_correlation`, `weather_flood_risk`, `rainfall_water_level`, `weather_strongest`, `weather_data_quality`, `weather_observation_count`, `weather_signals_ready`, `weather_signals_total` (see [weather-flood-correlation.md](weather-flood-correlation.md)).
+  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)), additive fleet fields `fleet_status`, `fleet_total_robots`, `fleet_available_robots`, `fleet_busy_robots`, `fleet_charging_robots`, `fleet_low_battery_robots`, `fleet_utilization`, `fleet_active_tasks`, `fleet_assigned_tasks`, `fleet_unassigned_tasks`, `fleet_assignment_coverage`, `fleet_average_response_minutes` (see [fleet-optimization.md](fleet-optimization.md)), and additive historical fields `historical_period`, `historical_incident_count`, `historical_resolved_incident_count`, `historical_mission_count`, `historical_alert_count`, `historical_sensor_reading_count`, `historical_recurrent_drain_count`, `historical_degraded_drain_count`, `historical_data_quality`, `historical_recent_trend`, `historical_top_recurring_drains` (see [historical-intelligence.md](historical-intelligence.md)), and additive coordination fields `coordination_status`, `coordination_pending_tasks`, `coordination_assigned_tasks`, `coordination_unassigned_tasks`, `coordination_available_robots`, `coordination_busy_robots`, `coordination_charging_robots`, `coordination_conflict_count`, `coordination_reassignment_required`, `coordination_average_task_priority`, `coordination_average_candidate_score` (see [mission-coordination.md](mission-coordination.md)), and additive weather fields `weather_correlation`, `weather_flood_risk`, `rainfall_water_level`, `weather_strongest`, `weather_data_quality`, `weather_observation_count`, `weather_signals_ready`, `weather_signals_total` (see [weather-flood-correlation.md](weather-flood-correlation.md)), and additive decision-audit fields `audit_summary`, `audit_decision_counts`, `audit_level_counts`, `audit_recent_changes`, `audit_retention` (see [decision-audit.md](decision-audit.md)).
 
 ### `GET /api/analytics/monthly`
 - **Access**: Public / Authenticated

@@ -972,6 +972,70 @@ export function normalizeMissionCoordination(payload) {
   };
 }
 
+/**
+ * Normalize a decision-audit summary payload (GET /api/audit/summary,
+ * /api/audit/recent or the "decisionAuditUpdate" socket event) into
+ * the compact audit overlay the twin needs (Update #24).
+ * Returns null for a missing/invalid payload so callers degrade to
+ * "no audit overlay". READ ONLY: only real recorded/dedup decisions
+ * are ever carried; nothing here ever updates the audit trail.
+ */
+export function normalizeDecisionAudit(payload) {
+  if (!payload || typeof payload !== "object") return null;
+
+  const recentChanges = asArray(payload.recent_changes)
+    .filter((row) => row && row.decisionType)
+    .map((row) => ({
+      decisionType: row.decisionType || null,
+      entityType: row.entityType || null,
+      entityId: safeNumber(row.entityId, null),
+      drainId: safeNumber(row.drainId, null),
+      robotId: safeNumber(row.robotId, null),
+      level:
+        normalizeLevel(row.level) ||
+        (row.level ? String(row.level).toUpperCase() : null),
+      score: safeNumber(row.score, null),
+      status: row.status || null,
+      recorded: Boolean(row.recorded),
+      reason: row.reason || null,
+      timestamp: row.timestamp || null
+    }));
+
+  const recentAudits = asArray(payload.audits)
+    .filter((row) => row && row.decisionType)
+    .map((row) => ({
+      id: safeNumber(row.id, null),
+      decisionType: row.decisionType || null,
+      entityType: row.entityType || null,
+      entityId: safeNumber(row.entityId, null),
+      drainId: safeNumber(row.drainId, null),
+      robotId: safeNumber(row.robotId, null),
+      level:
+        normalizeLevel(row.level) ||
+        (row.level ? String(row.level).toUpperCase() : null),
+      score: safeNumber(row.score, null),
+      status: row.status || null,
+      timestamp: row.timestamp || null
+    }));
+
+  const counts = payload.counts || {};
+  const byType = counts.byDecisionType || payload.byDecisionType || null;
+  const byLevel = counts.byLevel || payload.byLevel || null;
+
+  return {
+    status:
+      payload.status || (recentChanges.length > 0 ? "READY" : "NO_RECORDS"),
+    generatedAt: payload.generated_at || payload.generatedAt || null,
+    recorded: Boolean(payload.recorded),
+    checked: safeNumber(payload.checked, null),
+    total: safeNumber(counts.total ?? payload.total, null),
+    byDecisionType: byType && typeof byType === "object" ? { ...byType } : null,
+    byLevel: byLevel && typeof byLevel === "object" ? { ...byLevel } : null,
+    recentChanges,
+    recentAudits
+  };
+}
+
 // ------------------------------------------------------------
 // Live socket state reducer (single immutable reducer shared by
 // the Digital Twin page/preview so every event path is pure and
@@ -1023,6 +1087,12 @@ export function digitalTwinReducer(state, action) {
             ? action.weatherCorrelation
             : state.weatherCorrelation
               ? state.weatherCorrelation
+              : null,
+        decisionAudit:
+          action.decisionAudit !== undefined
+            ? action.decisionAudit
+            : state.decisionAudit
+              ? state.decisionAudit
               : null,
         loadError: action.loadError,
         refreshNonce: (state.refreshNonce || 0) + 1
@@ -1173,6 +1243,12 @@ export function digitalTwinReducer(state, action) {
       const weatherCorrelation = normalizeWeatherFloodCorrelation(action.payload);
       if (!weatherCorrelation) return state;
       return { ...state, weatherCorrelation };
+    }
+
+    case "DECISION_AUDIT_UPDATE": {
+      const decisionAudit = normalizeDecisionAudit(action.payload);
+      if (!decisionAudit) return state;
+      return { ...state, decisionAudit };
     }
 
     case "ROUTE_UPDATE": {

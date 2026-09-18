@@ -15,7 +15,8 @@ import {
   FaTruckMoving,
   FaNetworkWired,
   FaMicrochip,
-  FaCloudRain
+  FaCloudRain,
+  FaClipboardList
 } from "react-icons/fa";
 
 import "../../styles/sidebar.css";
@@ -158,6 +159,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
           >
             <FaListOl />
             <span>AI Decisions</span>
+          </li>
+
+          {/* Decision Audit (Update #24) */}
+          <li
+            className={activePage === "decisionaudit" ? "active" : ""}
+            onClick={() => onNavigate("decisionaudit")}
+          >
+            <FaClipboardList />
+            <span>Decision Audit</span>
           </li>
 
           {/* Users (Admin only) */}

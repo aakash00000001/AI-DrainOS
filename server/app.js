@@ -39,6 +39,7 @@ app.use("/api/missions/coordination", require("./routes/missionCoordination"));
 app.use("/api/missions", require("./routes/missions"));
 app.use("/api/incidents", require("./routes/incidents"));
 app.use("/api/fleet-optimization", require("./routes/fleetOptimization"));
+app.use("/api/audit", require("./routes/decisionAudit"));
 app.use("/api/historical", require("./routes/historicalIntelligence"));
 app.use("/api/charging-stations", require("./routes/chargingStations"));
 app.use("/api/settings", require("./routes/settings"));

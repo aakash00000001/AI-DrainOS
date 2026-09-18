@@ -13,6 +13,7 @@ const fleetOptimizationService = require("./services/fleetOptimizationService");
 const missionCoordinatorService = require("./services/missionCoordinatorService");
 const sensorIntelligenceService = require("./services/sensorIntelligenceService");
 const weatherFloodCorrelationService = require("./services/weatherFloodCorrelationService");
+const decisionAuditService = require("./services/decisionAuditService");
 
 require("dotenv").config();
 
@@ -635,6 +636,21 @@ setInterval(async () => {
       await weatherFloodCorrelationService.evaluateAndEmitWeatherCorrelation();
     } catch (weatherErr) {
       console.log("⚠️ weatherFloodCorrelationUpdate skipped:", weatherErr.message);
+    }
+
+    // ==================================================
+    // 15. DECISION AUDIT (explainer + append-only trail)
+    // ==================================================
+    // Appends an AI_DECISION audit record ONLY when the top drains'
+    // priority meaningfully changed (level / >=3 score points /
+    // recommendation) and emits `decisionAuditUpdate` at most every
+    // 60s and only on meaningful change. Read-only explainability:
+    // never dispatching and never touching missionEngine.
+
+    try {
+      await decisionAuditService.evaluateAndEmitDecisionAudit();
+    } catch (auditErr) {
+      console.log("⚠️ decisionAuditUpdate skipped:", auditErr.message);
     }
 
   } catch (err) {

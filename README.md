@@ -92,6 +92,7 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **Autonomous Mission Scheduling & Multi-Robot Coordination**: A fleet-wide, deterministic **coordination** layer (`server/services/missionCoordinatorService.js`) that plans *which task matters most, which robot should take it, whether it can get there, and what conflicts/reassignments already exist* across the whole fleet at once. Its coordination priority (decision 0.40 · incident severity 0.25 · flood risk 0.15 · forecast 0.10 · maintenance/vision 0.10) and candidate score (distance 30 · battery 25 · ETA 20 · availability 15 · feasibility 10) are documented weighted sums with honest renormalization — missing signals become `INSUFFICIENT_DATA`/`NO_COORDINATES`/`NO_FEASIBLE_ROUTE`, never fabricated values. `ADVISORY_PLAN` (default) never mutates missions; `AUTONOMOUS_PLAN` only ever dispatches through the existing `missionEngine.dispatchMission` (never a competing mission record). It reports conflicts and reassignments explicitly (`REASSIGNMENT_REQUIRED` with a recommended replacement, never a silent overwrite). Additive surfaces: read-only `/api/missions/coordination` (+ `POST /plan`), additive dashboard `coordination` and analytics `coordination_*` fields, a signature-guarded `missionCoordinationUpdate` event, a Mission Coordination panel/page, and an additive Digital Twin + robot-page overlay. See [docs/mission-coordination.md](docs/mission-coordination.md).
 - **Advanced IoT Sensor Intelligence & Anomaly Detection**: A **descriptive** sensor-integrity layer (`server/services/sensorIntelligenceService.js`) that scores each sensor's health (0–100 → `HEALTHY`/`GOOD`/`DEGRADED`/`POOR`/`CRITICAL`, or `INSUFFICIENT_DATA`) and detects `SPIKE`/`DROP`/`RAPID_CHANGE`/`STUCK_SENSOR`/`STALE_SENSOR`/`MISSING_DATA`/`OUT_OF_RANGE`/`NOISE` signals from the real bounded reading window. Every score carries human-readable reasons and signals; anomalies are worded descriptively ("consistent with…") and never claim a root cause. It only opens incidents for severe integrity problems through the existing `incidentService`, never dispatches robots, and never fabricates a reading. Additive surfaces: read-only `/api/predictions/sensor-intelligence`, `/summary`, `/anomalies`, `/anomalies/:sensorId`, `/drain/:drainId`, `/:sensorId`, additive dashboard `sensorIntelligence`/`sensorHealthSummary`/`sensorAnomalySummary` and analytics `sensor_*` fields (+ `GET /api/analytics/sensor-intelligence`), a signature-guarded `sensorIntelligenceUpdate` event, a Sensor Intelligence panel/page, and an additive Digital Twin sensor overlay. See [docs/sensor-intelligence.md](docs/sensor-intelligence.md).
 - **Weather + Flood Correlation Intelligence**: A **descriptive** weather layer (`server/services/weatherFloodCorrelationService.js`) that aligns **real** weather observations (OpenWeatherMap, metric units, fetched forward-only and throttled into the new `weather_observations` table — never backfilled or seeded) with **real** `sensor_readings` water levels over a bounded window (default 24 h, max 168 h) and reports a Pearson correlation per signal (`rainfall`/`humidity`/`temperature`/`pressure`/`wind` vs water level) with a 30-minute timestamp tolerance and optional 0/15/30/60-min lag. Results are strictly descriptive — every payload ships a non-causal disclaimer — and honest states only: `WEATHER_UNAVAILABLE` (no observations), `INSUFFICIENT_DATA` (< 20 aligned pairs), and always-`NOT_AVAILABLE` for `weather_flood_risk`/`weather_forecast` (those outputs are not persisted, never recomputed). A 4-bucket trend (`strengthening`/`weakening`/`stable`/`insufficient`) adds timing context. Additive surfaces: read-only `/api/predictions/weather-correlation` (`/`, `/summary`, `/signals`, `/trends`, `/drains`, `/drain/:drainId`, `/:signal`), additive dashboard `weatherCorrelation` and analytics `weather_*` fields (+ `GET /api/analytics/weather-correlation`), a signature + throttle-guarded `weatherFloodCorrelationUpdate` event, a Weather Correlation panel/page, and an additive Digital Twin overlay. `missionEngine.js` untouched; no incidents are opened from a correlation. See [docs/weather-flood-correlation.md](docs/weather-flood-correlation.md).
+- **Explainable AI + Decision Audit**: An **append-only, read-only** trail (`server/services/decisionAuditService.js`) that records the current state of **10 decision types** (flood risk, forecast, maintenance, decision, sensor intelligence, weather correlation, robot route, mission coordination, fleet optimization, incidents) into a new `decision_audits` table, restating the existing engine output without recomputation. It never dispatches robots, never opens incidents, never touches `decisionEngine.WEIGHTS` or `server/services/missionEngine.js`, and reports honest unavailability (`INSUFFICIENT_DATA` / `NO_DATA` / `NO_COORDINATES` with `null` scores, never zeros). Snapshots are deduped to meaningful changes only (signature over policy details, score delta ≥ 3). Additive surfaces: bounded `/api/audit` REST (`GET /`, `/summary`, `/recent`, `/drain/:id`, `/robot/:id`, `/type/:type`, `/decision/:decisionId`, `/:id`, `/:id/explanation`, `POST /snapshot`), a live throttled `decisionAuditUpdate` socket event (≥60 s, only when rows were recorded), additive dashboard `decisionAudit` block, additive `audit_*` analytics fields, a Digital Twin overlay, and an Explainable AI panel/page (`#/decisionaudit`). See [docs/decision-audit.md](docs/decision-audit.md).
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -518,13 +519,16 @@ Comprehensive list of REST endpoints documented in [docs/api.md](docs/api.md).
 ## 21. Database Tables
 Database tables (`users`, `refresh_tokens`, `settings`, `drains`, `robots`, `sensors`,
 `sensor_readings`, `alerts`, `missions`, `charging_stations`, `reports`,
-`maintenance_predictions`, `drain_vision_inspections`, `incidents`) documented in
+`maintenance_predictions`, `drain_vision_inspections`, `incidents`, `decision_audits`)
+documented in
 [docs/database.md](docs/database.md). `sensor_readings` is the minimal flood-risk
 history table (see [docs/flood-risk.md](docs/flood-risk.md)); an idempotent migration
 (`database/migrations/002_sensor_readings.sql`) is applied automatically to existing
 databases by `scripts/dbInit.js` without destroying data. The vision metadata audit
 table is added the same way via `database/migrations/004_drain_vision_inspections.sql`,
-and the emergency incidents table via `database/migrations/005_incidents.sql`.
+and the emergency incidents table via `database/migrations/005_incidents.sql`. The
+decision-audit trail is added the same way via `database/migrations/008_decision_audits.sql`
+(append-only: an SQL trigger blocks any single-row `UPDATE`/`DELETE`).
 
 ## 22. Important Socket.IO Events
 - `drainCleaned`: Fired when a robot reaches target drain and completes cleaning.
@@ -545,6 +549,7 @@ and the emergency incidents table via `database/migrations/005_incidents.sql`.
 - `missionCoordinationUpdate`: Emitted (signature-guarded, only on meaningful change; wired into the live 5-second loop) by the mission coordination service with `{ status, mode, summary, assignments, unassigned, conflicts, reassignment_required, generated_at }`. Used by the Mission Coordination panel/page, the app-level toast (warning on unassigned tasks / conflicts) and the Digital Twin + robot-page coordination overlay (see [docs/mission-coordination.md](docs/mission-coordination.md)).
 - `sensorIntelligenceUpdate`: Emitted (signature-guarded, only on meaningful change; wired into the live 5-second loop and the MQTT pipeline) by the sensor intelligence service with `{ status, generatedAt, summary, sensors, drains, anomalies, disclaimer }`. Used by the Sensor Intelligence panel/page, the app-level toast (warning on critical sensors) and the Digital Twin sensor overlay (see [docs/sensor-intelligence.md](docs/sensor-intelligence.md)).
 - `weatherFloodCorrelationUpdate`: Emitted (signature + throttle guarded; wired into the live 5-second loop and the MQTT-triggered guarded refresh path) by the weather flood correlation service with the summary payload `{ status, generated_at, window_hours, disclaimer, weather_data_quality, signals_ready, signals_total, signals, strongest, latest_weather, message }`. Used by the Weather Correlation panel/page, the app-level info toast and the Digital Twin weather overlay (see [docs/weather-flood-correlation.md](docs/weather-flood-correlation.md)).
+- `decisionAuditUpdate`: Emitted (throttled to ≥ 60 s, signature-guarded, and only when meaningful rows were recorded) by the decision audit service with `{ status, generated_at, counts: { total, byDecisionType, byLevel }, recorded, checked, recent_changes, dwell }`. Used by the Explainable AI panel/page, the app-level toast (only when `recorded` is truthy) and the Digital Twin audit overlay (see [docs/decision-audit.md](docs/decision-audit.md)).
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -641,7 +646,7 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **495 tests** covering auth, RBAC, drains, robots, missions,
+The suite currently includes **535 tests** covering auth, RBAC, drains, robots, missions,
 alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
 database mapping, AI prediction, socket emission, alert escalation, and broker-failure
 resilience), the flood risk engine (normalization, trend, classification, historical
@@ -689,7 +694,13 @@ real weather/reading pairs, bounded windows, honest `WEATHER_UNAVAILABLE` /
 `INSUFFICIENT_DATA` / `NOT_AVAILABLE` states, non-causal wording, throttled forward-only
 weather refresh, throttle + signature-guarded `weatherFloodCorrelationUpdate` emission, the
 full `/api/predictions/weather-correlation` REST surface, and the additive Digital Twin
-weather overlay).
+weather overlay), and the explainable AI + decision audit layer (snapshot builders for all
+ten decision types incl. honest `INSUFFICIENT_DATA` / `NO_DATA` / `insufficient_history`
+states, null-not-zero guarding, append-only table + trigger rejection, `UNCHANGED` /
+`NOT_MATERIAL` / `RECORDED` dedup semantics, chronological latest-row ordering, the
+signature, live-loop throttle + emit-on-record-only, additive dashboard/analytics shapes,
+the full `/api/audit` REST surface with auth on `POST /snapshot`, the amendment-free
+no-side-effect contract, and the additive Digital Twin audit reducer).
 
 > Note: `server/tests/floodForecast.test.js` has one known timing-sensitive test that can
 > intermittently fail in a full-suite run; it passes in isolation and on rerun and is
@@ -716,7 +727,9 @@ AI-DrainOS/
 │   │   │   ├── FleetOptimizationPanel.jsx # dashboard fleet panel
 │   │   │   ├── FleetOptimizationPage.jsx  # full fleet optimization page
 │   │   │   ├── MissionCoordinationPanel.jsx # dashboard coordination panel
-│   │   │   └── MissionCoordinationPage.jsx  # full coordination console
+│   │   │   ├── MissionCoordinationPage.jsx  # full coordination console
+│   │   │   ├── DecisionAuditPanel.jsx       # dashboard explainable-AI panel
+│   │   │   └── DecisionAuditPage.jsx        # full decision audit trail page
 │   │   ├── pages/
 │   │   ├── services/
 │   │   │   ├── digitalTwinService.js      # REST aggregation (read-only)
@@ -724,10 +737,12 @@ AI-DrainOS/
 │   │   │   ├── incidentService.js         # incidents REST client
 │   │   │   ├── fleetOptimizationService.js # fleet optimization REST client
 │   │   │   └── missionCoordinationService.js # coordination REST client
+│   │   │   └── decisionAuditService.js      # decision audit REST client
 │   │   ├── styles/incidents.css
 │   │   ├── styles/digitaltwin.css
 │   │   ├── styles/fleetOptimization.css
 │   │   ├── styles/missionCoordination.css
+│   │   ├── styles/decisionAudit.css
 │   │   └── App.jsx
 │   └── vite.config.js
 ├── server/                  # Node.js Express Backend & Socket.IO
@@ -746,6 +761,7 @@ AI-DrainOS/
 │   └── migrations/003_maintenance_predictions.sql
 │   └── migrations/004_drain_vision_inspections.sql
 │   └── migrations/005_incidents.sql
+│   └── migrations/008_decision_audits.sql
 ├── docs/                    # Architectural & API Documentation
 │   ├── architecture.md
 │   ├── api.md
@@ -762,7 +778,8 @@ AI-DrainOS/
 │   ├── historical-intelligence.md
 │   ├── mission-coordination.md
 │   ├── sensor-intelligence.md
-│   └── weather-flood-correlation.md
+│   ├── weather-flood-correlation.md
+│   └── decision-audit.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example
