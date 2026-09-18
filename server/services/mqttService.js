@@ -26,6 +26,7 @@ const floodForecast = require("./floodForecastService");
 const maintenanceService = require("./maintenancePredictionService");
 const decisionEngine = require("./decisionEngine");
 const incidentService = require("./incidentService");
+const sensorIntelligenceService = require("./sensorIntelligenceService");
 
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
@@ -880,6 +881,22 @@ async function handleMessage(topic, rawPayload, context = {}) {
     };
 
     io.emit("sensorUpdate", update);
+
+    // --------------------------------------------------
+    // 8b. Sensor intelligence (additive, best-effort).
+    // Recomputes bounded sensor health + anomaly detection for this
+    // drain and emits `sensorIntelligenceUpdate` only on a
+    // meaningful change. A failure here can never break the
+    // existing MQTT -> sensor -> AI -> alert pipeline.
+    // --------------------------------------------------
+
+    try {
+      await sensorIntelligenceService.evaluateAndEmitSensorIntelligence({
+        drainId: Number(drainId)
+      });
+    } catch (intelligenceErr) {
+      console.log("⚠️ Sensor intelligence skipped:", intelligenceErr.message);
+    }
 
     console.log(
       `📡 MQTT ${topic} → ${drain.location} water=${reading.water_level}% gas=${reading.gas_level} temp=${reading.temperature}°C prediction=${prediction} (${source})` +

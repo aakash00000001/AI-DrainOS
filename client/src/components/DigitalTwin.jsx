@@ -299,6 +299,15 @@ function levelFromScore(score) {
 // Sensor object
 // ------------------------------------------------------------
 
+const HEALTH_COLOR = {
+  HEALTHY: "#22c55e",
+  GOOD: "#10b981",
+  DEGRADED: "#eab308",
+  POOR: "#f97316",
+  CRITICAL: "#ef4444",
+  INSUFFICIENT_DATA: "#94a3b8"
+};
+
 const SensorView = memo(function SensorView({
   id,
   x,
@@ -306,6 +315,12 @@ const SensorView = memo(function SensorView({
   sensorIdLabel,
   waterLevel,
   status,
+  healthStatus,
+  healthScore,
+  anomalyCount,
+  stale,
+  missingData,
+  latestAnomaly,
   selected,
   compact,
   onSelect
@@ -313,6 +328,12 @@ const SensorView = memo(function SensorView({
   const water = safeWaterLevel(waterLevel);
   const isWarning = status === "Warning" || status === "Critical";
   const color = water !== null && water >= 75 ? "#dc2626" : isWarning ? "#f59e0b" : "#06b6d4";
+
+  // Sensor intelligence overlay (Update #21) — additive, read-only.
+  const healthColor = healthStatus ? HEALTH_COLOR[healthStatus] || null : null;
+  const hasAnomaly = Number(anomalyCount) > 0;
+  const degraded =
+    healthStatus === "POOR" || healthStatus === "CRITICAL" || healthStatus === "DEGRADED";
 
   return (
     <group
@@ -337,6 +358,18 @@ const SensorView = memo(function SensorView({
         <cylinderGeometry args={[0.04, 0.04, 1.4, 8]} />
         <meshStandardMaterial color="#94a3b8" />
       </mesh>
+      {healthColor && (
+        <mesh position={[0, 2.0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.62, degraded || hasAnomaly ? 0.06 : 0.035, 8, 28]} />
+          <meshBasicMaterial color={healthColor} transparent opacity={0.9} />
+        </mesh>
+      )}
+      {(stale || missingData) && (
+        <mesh position={[0, 2.0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.84, 0.02, 8, 28]} />
+          <meshBasicMaterial color={missingData ? "#94a3b8" : "#f59e0b"} transparent opacity={0.6} />
+        </mesh>
+      )}
       {selected && (
         <mesh position={[0, 2.0, 0]}>
           <sphereGeometry args={[0.85, 20, 20]} />
@@ -350,6 +383,17 @@ const SensorView = memo(function SensorView({
             <div style={{ color: "#94a3b8", fontWeight: 400 }}>
               {water === null ? "Data unavailable" : `water ${water}%`}
             </div>
+            {healthStatus && (
+              <div style={{ color: healthColor || "#94a3b8", fontWeight: 600 }}>
+                {healthStatus}
+                {healthScore != null ? ` · ${healthScore}` : ""}
+              </div>
+            )}
+            {latestAnomaly && (
+              <div style={{ color: "#fca5a5", fontWeight: 400 }}>
+                {latestAnomaly.type}
+              </div>
+            )}
           </div>
         </Html>
       )}
@@ -753,6 +797,13 @@ function DigitalTwin({
     fleet && fleet.unassignedByDrain ? fleet.unassignedByDrain : EMPTY_OBJECT;
   const fleetByRobot = fleet && fleet.byRobot ? fleet.byRobot : EMPTY_OBJECT;
 
+  // Sensor intelligence overlay (Update #21) — additive + read-only.
+  // Missing data simply draws no health ring (graceful degrade).
+  const sensorIntelBySensor =
+    live && live.sensorIntelligence && live.sensorIntelligence.bySensor
+      ? live.sensorIntelligence.bySensor
+      : EMPTY_OBJECT;
+
   const fusedDrains = useMemo(
     () => fuseDrains(drains, live.byDrain, decisions, incidentsByDrain),
     [drains, live.byDrain, decisions, incidentsByDrain]
@@ -866,20 +917,29 @@ function DigitalTwin({
             />
           ))}
 
-          {renderSensors.map((sensor) => (
-            <SensorView
-              key={`sensor-${sensor.id}`}
-              id={sensor.id}
-              x={sensor.x}
-              z={sensor.z}
-              sensorIdLabel={`Sensor ${sensor.id}`}
-              waterLevel={sensor.waterLevel}
-              status={sensor.status}
-              selected={selected && selected.type === "sensor" && Number(selected.id) === Number(sensor.id)}
-              compact={compact}
-              onSelect={onSelect}
-            />
-          ))}
+          {renderSensors.map((sensor) => {
+            const intel = sensorIntelBySensor[sensor.id] || null;
+            return (
+              <SensorView
+                key={`sensor-${sensor.id}`}
+                id={sensor.id}
+                x={sensor.x}
+                z={sensor.z}
+                sensorIdLabel={`Sensor ${sensor.id}`}
+                waterLevel={sensor.waterLevel}
+                status={sensor.status}
+                healthStatus={intel ? intel.healthStatus : sensor.healthStatus || null}
+                healthScore={intel && intel.healthScore != null ? intel.healthScore : sensor.healthScore}
+                anomalyCount={intel ? intel.anomalyCount : sensor.anomalyCount || 0}
+                stale={intel ? intel.stale : Boolean(sensor.stale)}
+                missingData={intel ? intel.missingData : Boolean(sensor.missingData)}
+                latestAnomaly={intel ? intel.latestAnomaly : sensor.latestAnomaly || null}
+                selected={selected && selected.type === "sensor" && Number(selected.id) === Number(sensor.id)}
+                compact={compact}
+                onSelect={onSelect}
+              />
+            );
+          })}
 
           {renderRobots.map((robot) => (
             <RobotView

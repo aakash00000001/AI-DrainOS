@@ -10,6 +10,9 @@ const decisionEngine = require("../services/decisionEngine");
 const robotPathPlanning = require("../services/robotPathPlanningService");
 const incidentService = require("../services/incidentService");
 const fleetOptimizationService = require("../services/fleetOptimizationService");
+const historicalIntelligence = require("../services/historicalIntelligenceService");
+const missionCoordinator = require("../services/missionCoordinatorService");
+const sensorIntelligence = require("../services/sensorIntelligenceService");
 
 router.get("/", async (req, res) => {
 
@@ -85,6 +88,38 @@ router.get("/", async (req, res) => {
       fleetAnalytics = await fleetOptimizationService.getAnalytics();
     } catch (fleetErr) {
       console.log("⚠️ Fleet analytics skipped:", fleetErr.message);
+    }
+
+    // Historical intelligence analytics are additive and best-effort.
+    // Descriptive evidence only (never a prediction); a failure here
+    // never breaks the existing analytics contract.
+    let historicalAnalytics = null;
+
+    try {
+      historicalAnalytics = await historicalIntelligence.getAnalytics();
+    } catch (historyErr) {
+      console.log("⚠️ Historical analytics skipped:", historyErr.message);
+    }
+
+    // Mission coordination analytics are additive and best-effort.
+    // Advisory planning metrics only; failure never breaks analytics.
+    let coordinationAnalytics = null;
+
+    try {
+      coordinationAnalytics = await missionCoordinator.getAnalytics();
+    } catch (coordErr) {
+      console.log("⚠️ Coordination analytics skipped:", coordErr.message);
+    }
+
+    // Sensor intelligence analytics are additive and best-effort.
+    // Real recorded readings only; a failure here never breaks the
+    // existing analytics contract.
+    let sensorAnalytics = null;
+
+    try {
+      sensorAnalytics = await sensorIntelligence.getAnalytics();
+    } catch (sensorErr) {
+      console.log("⚠️ Sensor intelligence analytics skipped:", sensorErr.message);
     }
 
     res.json({
@@ -165,7 +200,81 @@ router.get("/", async (req, res) => {
         : null,
       fleet_average_response_minutes: fleetAnalytics
         ? fleetAnalytics.average_estimated_response_minutes
-        : null
+        : null,
+      historical_period: historicalAnalytics
+        ? historicalAnalytics.historical_period
+        : historicalIntelligence.DEFAULT_PERIOD,
+      historical_incident_count: historicalAnalytics
+        ? historicalAnalytics.historical_incident_count
+        : 0,
+      historical_resolved_incident_count: historicalAnalytics
+        ? historicalAnalytics.historical_resolved_incident_count
+        : 0,
+      historical_mission_count: historicalAnalytics
+        ? historicalAnalytics.historical_mission_count
+        : 0,
+      historical_alert_count: historicalAnalytics
+        ? historicalAnalytics.historical_alert_count
+        : 0,
+      historical_sensor_reading_count: historicalAnalytics
+        ? historicalAnalytics.historical_sensor_reading_count
+        : 0,
+      historical_recurrent_drain_count: historicalAnalytics
+        ? historicalAnalytics.historical_recurrent_drain_count
+        : 0,
+      historical_degraded_drain_count: historicalAnalytics
+        ? historicalAnalytics.historical_degraded_drain_count
+        : 0,
+      historical_data_quality: historicalAnalytics
+        ? historicalAnalytics.historical_data_quality
+        : historicalIntelligence.DATA_QUALITY.INSUFFICIENT_DATA,
+      historical_recent_trend: historicalAnalytics
+        ? historicalAnalytics.historical_recent_trend
+        : historicalIntelligence.TREND.INSUFFICIENT_DATA,
+      coordination_pending_tasks: coordinationAnalytics ? coordinationAnalytics.coordination_pending_tasks : 0,
+      coordination_assigned_tasks: coordinationAnalytics ? coordinationAnalytics.coordination_assigned_tasks : 0,
+      coordination_unassigned_tasks: coordinationAnalytics ? coordinationAnalytics.coordination_unassigned_tasks : 0,
+      coordination_available_robots: coordinationAnalytics ? coordinationAnalytics.coordination_available_robots : 0,
+      coordination_busy_robots: coordinationAnalytics ? coordinationAnalytics.coordination_busy_robots : 0,
+      coordination_charging_robots: coordinationAnalytics ? coordinationAnalytics.coordination_charging_robots : 0,
+      coordination_conflict_count: coordinationAnalytics ? coordinationAnalytics.coordination_conflict_count : 0,
+      coordination_reassignment_required: coordinationAnalytics
+        ? coordinationAnalytics.coordination_reassignment_required
+        : 0,
+      coordination_average_task_priority: coordinationAnalytics
+        ? coordinationAnalytics.coordination_average_task_priority
+        : null,
+      coordination_average_candidate_score: coordinationAnalytics
+        ? coordinationAnalytics.coordination_average_candidate_score
+        : null,
+      coordination_status: coordinationAnalytics
+        ? coordinationAnalytics.coordination_status
+        : missionCoordinator.COORDINATION_STATUS.INSUFFICIENT_DATA,
+      sensor_health_status: sensorAnalytics
+        ? sensorAnalytics.overall_health_status
+        : sensorIntelligence.HEALTH_STATUS.INSUFFICIENT_DATA,
+      sensor_average_health: sensorAnalytics ? sensorAnalytics.average_health_score : null,
+      sensor_health_distribution: sensorAnalytics
+        ? sensorAnalytics.health_distribution
+        : null,
+      sensor_anomaly_count: sensorAnalytics ? sensorAnalytics.anomaly_count : 0,
+      sensor_anomalies_by_type: sensorAnalytics
+        ? sensorAnalytics.anomalies_by_type
+        : null,
+      sensor_anomalies_by_severity: sensorAnalytics
+        ? sensorAnalytics.anomalies_by_severity
+        : null,
+      sensor_stale_count: sensorAnalytics ? sensorAnalytics.stale_sensors : 0,
+      sensor_missing_data_count: sensorAnalytics
+        ? sensorAnalytics.missing_data_sensors
+        : 0,
+      sensor_out_of_range_count: sensorAnalytics
+        ? sensorAnalytics.out_of_range_sensors
+        : 0,
+      sensor_affected_drains: sensorAnalytics ? sensorAnalytics.affected_drains : 0,
+      sensor_health_trend_status: sensorAnalytics
+        ? sensorAnalytics.health_trend_status
+        : "INSUFFICIENT_DATA"
     });
 
   }
@@ -408,6 +517,81 @@ router.get("/robot-routes", async (req, res) => {
 router.get("/fleet-optimization", async (req, res) => {
   try {
     const data = await fleetOptimizationService.getAnalytics();
+    res.json(data);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/historical - Historical analytics
+// --------------------------------------------------
+// Descriptive evidence over REAL records for a validated window.
+// Read-only; never a prediction. Additive.
+// --------------------------------------------------
+
+router.get("/historical", async (req, res) => {
+  const rawPeriod = req.query.period !== undefined ? req.query.period : req.query.window;
+  const window = historicalIntelligence.resolvePeriod(rawPeriod);
+
+  if (!window) {
+    return res.status(400).json({
+      error: "Invalid period",
+      message: `period must be one of: ${historicalIntelligence.VALID_PERIODS.join(", ")}`,
+      allowed_periods: historicalIntelligence.VALID_PERIODS,
+      default_period: historicalIntelligence.DEFAULT_PERIOD
+    });
+  }
+
+  const drain = historicalIntelligence.parseDrainId(req.query.drainId);
+  if (!drain.ok) {
+    return res.status(400).json({
+      error: "Invalid drainId",
+      message: "drainId must be a positive integer"
+    });
+  }
+
+  try {
+    const data = await historicalIntelligence.getHistoricalOverview({
+      period: window.period,
+      drainId: drain.value
+    });
+    res.json(data);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/coordination - Mission coordination analytics
+// --------------------------------------------------
+// Advisory scheduling metrics over live missions/robots. Read-only;
+// never dispatches. Additive.
+// --------------------------------------------------
+
+router.get("/coordination", async (req, res) => {
+  try {
+    const data = await missionCoordinator.getAnalytics();
+    res.json(data);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Analytics Error" });
+  }
+});
+
+// --------------------------------------------------
+// GET /api/analytics/sensor-intelligence
+// --------------------------------------------------
+// Sensor health distribution, anomalies by type/severity, stale /
+// missing-data sensors and affected drains. Read-only; real
+// recorded readings only; additive.
+// --------------------------------------------------
+
+router.get("/sensor-intelligence", async (req, res) => {
+  try {
+    const data = await sensorIntelligence.getAnalytics();
     res.json(data);
   } catch (err) {
     console.log(err);

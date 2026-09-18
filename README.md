@@ -88,6 +88,9 @@ Urban flash flooding caused by blocked storm drains poses significant risks to i
 - **Interactive 3D Digital Twin**: An additive, read-only 3D visualization layer (`three.js` + `@react-three/fiber` + `@react-three/drei`) rendered as a new **Digital Twin** page plus a compact live preview on the Dashboard. It aggregates the **existing** REST APIs and consumes the **existing** single Socket.IO connection to show drains, sensors, robots, charging stations and planner routes — with real flood-risk rings, separate AI-decision bars, live sensor water levels, click-to-inspect details (lazy per-drain risk/forecast/maintenance/decision/vision calls) and a non-3D data list fallback. It never writes to the database and never adds a second socket connection or movement loop. Coordinates use a documented visualization grid (not survey-grade GIS). See [docs/digital-twin.md](docs/digital-twin.md).
 - **Autonomous Emergency Response & Incident Intelligence**: A real, auditable incident lifecycle (`OPEN → ACKNOWLEDGED → RESPONDING → RESOLVED`) for high-stakes events. Incidents are created from **real** CRITICAL AI decisions (fire-and-forget hook in the MQTT pipeline), from other real engines, or manually; a CRITICAL incident automatically reuses the **existing** robot path planner (never a duplicate planner) and honestly records `PLANNED`, `MANUAL`, `NO_ROBOT_AVAILABLE` or `NO_COORDINATES`. One active incident per drain (partial unique index), guarded transitions, a timeline built **only** from stored timestamps, dashboard/analytics overlays, live `incidentUpdate` events, an Emergency Response panel, a dedicated Incidents page, and an additive Digital Twin beacon. See [docs/incidents.md](docs/incidents.md).
 - **Predictive Resource & Robot Fleet Optimization**: An **advisory** fleet-level layer (`server/services/fleetOptimizationService.js`) that reads the real robots/drains/incidents/decisions and produces explainable robot-to-task recommendations ranked by a documented priority score (decision 0.60 · severity 0.20 · age 0.10 · urgency 0.10) and candidate score (distance 35 · battery 25 · ETA 20 · availability 10 · feasibility 10), with honest availability states (`AVAILABLE`/`BUSY`/`CHARGING`/`LOW_BATTERY`/`OFFLINE`/`UNAVAILABLE`) and battery-aware route modes (`DIRECT`/`CHARGE_THEN_TASK`/`NO_FEASIBLE_ROUTE`). It **never** assigns or moves robots — `missionEngine.js` stays the authority — and reuses the existing decision engine + path planner rather than duplicating them. Read-only REST (`/api/fleet-optimization`), additive dashboard/analytics fields, a signature-guarded live `fleetOptimizationUpdate` event, a Fleet Optimization panel/page, and an additive Digital Twin overlay. See [docs/fleet-optimization.md](docs/fleet-optimization.md).
+- **Historical Intelligence & Continuous Learning Foundation**: An **evidence/analytics** layer (`server/services/historicalIntelligenceService.js`) that answers *what the recorded history actually shows* over a bounded window (24h/7d/30d/90d, default 30d) — reading counts, averages, min/max, first/last and real-trend labels per sensor; incident/mission/alert aggregates with real response/resolution timings; descriptive time-of-day patterns; current-vs-historical comparison (live `sensors` vs window average, and a like-for-like vs the immediately preceding window); and a descriptive historical drain-health **label** derived from real evidence thresholds (not the AI Decision score). It is strictly **read-only**, adds **no new tables**, reuses existing records only, and never fabricates: a metric with no samples is `null`, a period with no records is `INSUFFICIENT_DATA`, and missing signals are reported in `data_quality.missing_signals`. Additive surfaces: read-only `/api/historical` (full + focused views), additive dashboard `historicalSummary` and analytics `historical_*` fields. The full Historical Intelligence **UI** is a later sub-update. See [docs/historical-intelligence.md](docs/historical-intelligence.md).
+- **Autonomous Mission Scheduling & Multi-Robot Coordination**: A fleet-wide, deterministic **coordination** layer (`server/services/missionCoordinatorService.js`) that plans *which task matters most, which robot should take it, whether it can get there, and what conflicts/reassignments already exist* across the whole fleet at once. Its coordination priority (decision 0.40 · incident severity 0.25 · flood risk 0.15 · forecast 0.10 · maintenance/vision 0.10) and candidate score (distance 30 · battery 25 · ETA 20 · availability 15 · feasibility 10) are documented weighted sums with honest renormalization — missing signals become `INSUFFICIENT_DATA`/`NO_COORDINATES`/`NO_FEASIBLE_ROUTE`, never fabricated values. `ADVISORY_PLAN` (default) never mutates missions; `AUTONOMOUS_PLAN` only ever dispatches through the existing `missionEngine.dispatchMission` (never a competing mission record). It reports conflicts and reassignments explicitly (`REASSIGNMENT_REQUIRED` with a recommended replacement, never a silent overwrite). Additive surfaces: read-only `/api/missions/coordination` (+ `POST /plan`), additive dashboard `coordination` and analytics `coordination_*` fields, a signature-guarded `missionCoordinationUpdate` event, a Mission Coordination panel/page, and an additive Digital Twin + robot-page overlay. See [docs/mission-coordination.md](docs/mission-coordination.md).
+- **Advanced IoT Sensor Intelligence & Anomaly Detection**: A **descriptive** sensor-integrity layer (`server/services/sensorIntelligenceService.js`) that scores each sensor's health (0–100 → `HEALTHY`/`GOOD`/`DEGRADED`/`POOR`/`CRITICAL`, or `INSUFFICIENT_DATA`) and detects `SPIKE`/`DROP`/`RAPID_CHANGE`/`STUCK_SENSOR`/`STALE_SENSOR`/`MISSING_DATA`/`OUT_OF_RANGE`/`NOISE` signals from the real bounded reading window. Every score carries human-readable reasons and signals; anomalies are worded descriptively ("consistent with…") and never claim a root cause. It only opens incidents for severe integrity problems through the existing `incidentService`, never dispatches robots, and never fabricates a reading. Additive surfaces: read-only `/api/predictions/sensor-intelligence`, `/summary`, `/anomalies`, `/anomalies/:sensorId`, `/drain/:drainId`, `/:sensorId`, additive dashboard `sensorIntelligence`/`sensorHealthSummary`/`sensorAnomalySummary` and analytics `sensor_*` fields (+ `GET /api/analytics/sensor-intelligence`), a signature-guarded `sensorIntelligenceUpdate` event, a Sensor Intelligence panel/page, and an additive Digital Twin sensor overlay. See [docs/sensor-intelligence.md](docs/sensor-intelligence.md).
 - **System Settings**: Configurable thresholds for water levels, battery limits, and simulation intervals.
 - **PDF Report Generation**: Exportable system analytical reports.
 
@@ -311,6 +314,148 @@ idempotent, no-schema-change feature (no new tables). Highlights:
 📄 Full documentation (advisory contract, inputs, availability states, scoring, assignment,
 API, events, Digital Twin overlay, tests): [docs/fleet-optimization.md](docs/fleet-optimization.md).
 
+## 15i. Historical Intelligence & Continuous Learning Foundation
+The historical intelligence layer (`server/services/historicalIntelligenceService.js`)
+is an **evidence/analytics** layer. It describes what the **stored PostgreSQL
+records actually show** over a bounded historical window. It is **not** a
+prediction engine, it does not replace the existing risk / forecast /
+maintenance / vision / decision / path-planning / incident / fleet services, and
+it never fabricates data. Additive and read-only — **no new tables**. Highlights:
+
+- **Bounded windows**: `24h`, `7d`, `30d` (default) or `90d`, selected with
+  `?period=` (alias `?window=`), optionally filtered with `?drainId=`. Invalid
+  values are rejected with HTTP 400; parameters are validated and every query is
+  parameterized.
+- **Real sensor analytics**: per-sensor reading counts, earliest/latest
+  timestamps and `average` / `minimum` / `maximum` / `first` / `last` / `change`
+  for water level, gas level and temperature, with trend labels
+  (`RISING`/`FALLING`/`STABLE`/`INSUFFICIENT_DATA`) computed from the **real
+  first and last** reading (needs ≥ 3 readings; thresholds water/gas 5,
+  temperature 1 °C).
+- **Incident / mission / alert history**: counts, severity/status/source/type
+  breakdowns, top drains and daily buckets, plus real timing averages
+  (acknowledgement, response, resolution for incidents; duration for missions)
+  that are `null` — never `0` — when no row carries the needed timestamp.
+- **Honest gaps**: the `missions` table has no response timestamp, so mission
+  response time is reported `null` and `response_time_available: false`; it is
+  never estimated.
+- **Descriptive time patterns**: hourly/weekday distributions for incidents and
+  alerts from real timestamps, with peaks reported only when the sample is large
+  enough (`>= 3`), worded descriptively ("Most recorded incidents occurred
+  during …") — never causal.
+- **Current vs historical comparison**: live `sensors` value (**CURRENT**) vs
+  the window average (**HISTORICAL**) with a separate **CHANGE**, and an
+  incident count vs the **immediately preceding window of equal length** — kept
+  separate and never merged into a single score.
+- **Descriptive drain health label**: `HEALTHY` / `WATCH` / `DEGRADED` /
+  `CRITICAL` / `INSUFFICIENT_DATA`, built only from real evidence counts and
+  documented thresholds, with human-readable reasons and an evidence object. It
+  is **not** the live AI Decision score and is not a prediction; live
+  `current_status` / `current_blockage_level` stay separate.
+- **Data quality contract**: every response carries a `data_quality` block
+  (`INSUFFICIENT_DATA` / `SPARSE` / `PARTIAL` / `COMPLETE` by record count,
+  `coverage_ratio`, `missing_signals`, `tables_used`, earliest/latest
+  timestamps).
+- **Additive surfaces**: read-only `/api/historical` (`/overview`, `/summary`,
+  `/sensors`, `/trends`, `/drains`, `/incidents`, `/missions`, `/robots`,
+  `/alerts`, `/patterns`, `/comparison`), an additive `historicalSummary` on
+  `/api/dashboard`, additive `historical_*` fields on `/api/analytics`, and
+  `GET /api/analytics/historical`. Existing fields are never removed/renamed.
+- **Integrity guarantees**: strictly read-only (no writes, no dispatches),
+  `missionEngine.js` untouched, existing services reused rather than replaced,
+  and a signature-guarded `historicalIntelligenceUpdate` emission contract on
+  the **existing** socket layer (implemented + tested; not wired into the live
+  5-second loop in this update, so no event is emitted by the running server
+  yet).
+- **Not yet included**: the Historical Intelligence **UI** and live emission
+  wiring (later sub-update). Backend foundation only.
+
+📄 Full documentation (windows, metrics, trends, data-quality labels, current
+vs historical, API, security, limitations): [docs/historical-intelligence.md](docs/historical-intelligence.md).
+
+## 15j. Autonomous Mission Scheduling & Multi-Robot Coordination
+The coordination layer (`server/services/missionCoordinatorService.js`) is a
+fleet-wide, deterministic and explainable scheduling layer. For the whole fleet
+at once it answers: which task matters most, which robot should take it, whether
+that robot can reach it, and what conflicts / reassignments already exist.
+
+- **Coordination priority (0–100)**: AI decision `0.40` · incident severity
+  `0.25` · flood risk `0.15` · forecast urgency `0.10` · maintenance/vision
+  `0.10`. Unavailable signals are dropped and the remaining weights are
+  **renormalized** (`priority_status: RENORMALIZED`); with no signal the task is
+  `INSUFFICIENT_DATA` with a `null` score.
+- **Candidate score (100-point budget)**: distance `30` · battery sufficiency
+  `25` · ETA `20` · availability `15` · route feasibility `10`.
+- **Battery-aware route modes**: `DIRECT` · `CHARGE_THEN_TASK` ·
+  `NO_FEASIBLE_ROUTE` (reusing the fleet optimizer / path planner).
+- **Assignment**: priority-ordered, one robot per task, with explicit
+  `unassigned` reasons (`NO_AVAILABLE_ROBOT`, `NO_FEASIBLE_ROUTE`,
+  `INSUFFICIENT_BATTERY`, `ALL_ROBOTS_BUSY`, `NO_COORDINATES`,
+  `INSUFFICIENT_DATA`) and a `required_action`.
+- **Conflicts & reassignment**: explicit, non-destructive
+  (`ROBOT_DOUBLE_ASSIGNED`, `DUPLICATE_ACTIVE_MISSION`,
+  `DUPLICATE_DRAIN_TASK`, `ROBOT_CHARGING_WITH_MISSION`, …); missions needing a
+  swap are reported as `REASSIGNMENT_REQUIRED` with a recommended replacement —
+  never silently overwritten.
+- **Modes / authority**: `ADVISORY_PLAN` (default) never mutates missions;
+  `AUTONOMOUS_PLAN` only ever dispatches through the existing
+  `missionEngine.dispatchMission`. No competing mission record is ever inserted.
+- **Additive surfaces**: read-only `/api/missions/coordination` (`/`, `/tasks`,
+  `/robots`, `/conflicts`, `/summary`, `/analytics`) plus auth-protected
+  `POST /plan`, an additive `coordination` object on `/api/dashboard`,
+  additive `coordination_*` fields + `GET /api/analytics/coordination`, a
+  signature-guarded `missionCoordinationUpdate` event, a Mission Coordination
+  dashboard panel + page, and an additive Digital Twin / robot-page overlay.
+- **Honest gaps**: the schema stores no queue timestamp, so assignment wait time
+  is reported as `null` (`average_assignment_time_available: false`) with an
+  explicit reason; mission duration uses the real `missions` timestamps.
+- **Integrity guarantees**: `missionEngine.js` untouched, existing services
+  (fleet optimizer, path planner, decision engine) reused rather than replaced,
+  no new tables, no new dependencies, no second Socket.IO server.
+
+📄 Full documentation (weights, route modes, conflicts, API, socket, Twin overlay,
+limitations): [docs/mission-coordination.md](docs/mission-coordination.md).
+
+## 15k. Advanced IoT Sensor Intelligence & Anomaly Detection
+The sensor intelligence layer (`server/services/sensorIntelligenceService.js`)
+turns the real `sensor_readings` window into a **descriptive** sensor-integrity
+view. It is **not** a calibration authority and never replaces the existing
+flood-risk / forecast / maintenance / vision / decision services — it only adds
+an honest signal about *whether sensor data can be trusted*. Additive, no new
+tables. Highlights:
+
+- **Bounded, real windows**: a 10–30 reading window (default 20) per sensor,
+  read in one parameterized query; insufficient history is reported as
+  `INSUFFICIENT_DATA`, never guessed.
+- **Explainable health (0–100)**: `HEALTHY` 90–100, `GOOD` 75–89, `DEGRADED`
+  50–74, `POOR` 25–49, `CRITICAL` 0–24. Penalties come from staleness,
+  declared sensor status, window completeness and bounded anomaly severity —
+  each score ships its `reasons` and `signals`.
+- **Anomaly detection**: `SPIKE`, `DROP`, `RAPID_CHANGE`, `STUCK_SENSOR`,
+  `STALE_SENSOR`, `MISSING_DATA`, `OUT_OF_RANGE` (only within the real physical
+  ranges: water/gas 0–100, temperature −40..65 °C) and `NOISE`. Every anomaly has
+  `{ type, severity, sensorId, drainId, detectedAt, message, evidence, affectedWindow }`
+  and is worded descriptively — never a root-cause claim.
+- **Incidents, not noise**: only severe integrity problems are surfaced once,
+  through the existing `incidentService` (source `SENSOR`), with a 10-minute
+  cooldown; the layer never dispatches robots and `missionEngine.js` is untouched.
+- **Context, not formulas**: the sensor context is exposed to the flood-risk,
+  forecast, maintenance, decision and coordination layers without replacing any
+  existing formula or weight.
+- **Additive surfaces**: read-only `/api/predictions/sensor-intelligence`
+  (`/`, `/summary`, `/anomalies`, `/anomalies/:sensorId`, `/drain/:drainId`,
+  `/:sensorId`), additive dashboard `sensorIntelligence` / `sensorHealthSummary`
+  / `sensorAnomalySummary`, additive analytics `sensor_*` fields +
+  `GET /api/analytics/sensor-intelligence`, a signature-guarded
+  `sensorIntelligenceUpdate` event, a Sensor Intelligence panel + page, and an
+  additive Digital Twin sensor overlay (health rings, stale/missing markers).
+- **Integrity guarantees**: `missionEngine.js` untouched, existing services
+  reused rather than replaced, no new tables, no new dependencies, no second
+  Socket.IO server and no duplicate socket listeners.
+
+📄 Full documentation (health bands, anomaly rules, incident policy, API,
+socket, Twin overlay, limitations): [docs/sensor-intelligence.md](docs/sensor-intelligence.md).
+
 ## 16. Manual Mission Control
 UI interface (`pages/MissionControl.jsx`) enabling operators to manually select specific drains and dispatch available robots on demand.
 
@@ -355,6 +500,8 @@ and the emergency incidents table via `database/migrations/005_incidents.sql`.
 - `robotRouteUpdate`: Emitted when a drain's robot route planning meaningfully changes (selected robot, planning status, route type or target drain) with the full planning payload — selected robot, route type, waypoints, distance/time/battery estimates and selection reasons (see [docs/robot-path-planning.md](docs/robot-path-planning.md)).
 - `incidentUpdate`: Emitted by the incident service on every real incident change with `{ eventType, incident }`. `eventType` is one of `created`, `assigned`, `robotUnavailable`, `acknowledged`, `responded`, `resolved`; `incident` carries the real row (drain, severity, status, source, decision score/level, robot and route status, timestamps). Used by the Emergency Response panel, the Incidents page, the app-level toast, and the Digital Twin beacon (see [docs/incidents.md](docs/incidents.md)).
 - `fleetOptimizationUpdate`: Emitted (signature-guarded, only on meaningful change) by the fleet optimization service with `{ status, summary, tasks, recommendations, robots, unassigned, generated_at }`. Used by the Fleet Optimization panel/page, the app-level toast (warning on unassigned tasks) and the Digital Twin fleet overlay (see [docs/fleet-optimization.md](docs/fleet-optimization.md)).
+- `missionCoordinationUpdate`: Emitted (signature-guarded, only on meaningful change; wired into the live 5-second loop) by the mission coordination service with `{ status, mode, summary, assignments, unassigned, conflicts, reassignment_required, generated_at }`. Used by the Mission Coordination panel/page, the app-level toast (warning on unassigned tasks / conflicts) and the Digital Twin + robot-page coordination overlay (see [docs/mission-coordination.md](docs/mission-coordination.md)).
+- `sensorIntelligenceUpdate`: Emitted (signature-guarded, only on meaningful change; wired into the live 5-second loop and the MQTT pipeline) by the sensor intelligence service with `{ status, generatedAt, summary, sensors, drains, anomalies, disclaimer }`. Used by the Sensor Intelligence panel/page, the app-level toast (warning on critical sensors) and the Digital Twin sensor overlay (see [docs/sensor-intelligence.md](docs/sensor-intelligence.md)).
 
 ## 23. Environment Variables
 - `POSTGRES_HOST` (default: localhost)
@@ -451,7 +598,7 @@ Execute automated API test suite against safe test database:
 cd server
 npm test
 ```
-The suite currently includes **329 tests** covering auth, RBAC, drains, robots, missions,
+The suite currently includes **411 tests** covering auth, RBAC, drains, robots, missions,
 alerts, settings, analytics, workflow integration, MQTT (topic parsing, payload validation,
 database mapping, AI prediction, socket emission, alert escalation, and broker-failure
 resilience), the flood risk engine (normalization, trend, classification, historical
@@ -478,7 +625,21 @@ authentication, and `incidentUpdate` emission), and the advisory fleet optimizat
 (priority + candidate scoring formulas, battery-aware route modes, availability states,
 greedy multi-task assignment with honest unassigned reasons, the summary/status builders,
 signature-guarded `fleetOptimizationUpdate` emission, the full `/api/fleet-optimization`
-REST surface, and the additive Digital Twin fleet overlay).
+REST surface, and the additive Digital Twin fleet overlay), and the historical
+intelligence foundation (window/period + `?window=` alias resolution and validation,
+data-quality classification, real sensor min/max/change/trend with `INSUFFICIENT_DATA`
+honesty, drain filtering, incident/mission/alert aggregation with real and `null`
+timings, descriptive time patterns, current-vs-historical + preceding-window comparison,
+descriptive drain-health labels, determinism, signature-guarded
+`historicalIntelligenceUpdate` dedupe, and the full read-only `/api/historical` REST
+surface plus the additive dashboard/analytics historical fields), and the autonomous
+mission coordination layer (coordination priority + candidate scoring formulas, battery-aware
+route modes, availability states, priority-ordered assignment with honest unassigned reasons,
+explicit conflict detection, reassignment plans with a recommended replacement,
+advisory-only vs autonomous (missionEngine-dispatch) modes, the summary/analytics builders,
+signature-guarded `missionCoordinationUpdate` emission, the full `/api/missions/coordination`
+REST surface with auth + mode validation on `POST /plan`, and the additive Digital Twin +
+robot-page coordination overlay).
 
 > Note: `server/tests/floodForecast.test.js` has one known timing-sensitive test that can
 > intermittently fail in a full-suite run; it passes in isolation and on rerun and is
@@ -503,16 +664,20 @@ AI-DrainOS/
 │   │   │   ├── IncidentsPage.jsx          # full incident management page
 │   │   │   ├── IncidentTimeline.jsx       # lifecycle timeline
 │   │   │   ├── FleetOptimizationPanel.jsx # dashboard fleet panel
-│   │   │   └── FleetOptimizationPage.jsx  # full fleet optimization page
+│   │   │   ├── FleetOptimizationPage.jsx  # full fleet optimization page
+│   │   │   ├── MissionCoordinationPanel.jsx # dashboard coordination panel
+│   │   │   └── MissionCoordinationPage.jsx  # full coordination console
 │   │   ├── pages/
 │   │   ├── services/
 │   │   │   ├── digitalTwinService.js      # REST aggregation (read-only)
 │   │   │   ├── digitalTwinUtils.mjs       # pure shared logic + reducer
 │   │   │   ├── incidentService.js         # incidents REST client
-│   │   │   └── fleetOptimizationService.js # fleet optimization REST client
+│   │   │   ├── fleetOptimizationService.js # fleet optimization REST client
+│   │   │   └── missionCoordinationService.js # coordination REST client
 │   │   ├── styles/incidents.css
 │   │   ├── styles/digitaltwin.css
 │   │   ├── styles/fleetOptimization.css
+│   │   ├── styles/missionCoordination.css
 │   │   └── App.jsx
 │   └── vite.config.js
 ├── server/                  # Node.js Express Backend & Socket.IO
@@ -543,7 +708,10 @@ AI-DrainOS/
 │   ├── robot-path-planning.md
 │   ├── digital-twin.md
 │   ├── incidents.md
-│   └── fleet-optimization.md
+│   ├── fleet-optimization.md
+│   ├── historical-intelligence.md
+│   ├── mission-coordination.md
+│   └── sensor-intelligence.md
 ├── docker/                  # Multi-service Dockerfiles
 ├── docker-compose.yml
 ├── .env.example

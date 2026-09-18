@@ -33,6 +33,12 @@
 
 const pool = require("../config/db");
 
+// Additive sensor-health context (Update #21). Exposes a descriptive
+// sensor-health/anomaly block on the per-drain maintenance detail
+// WITHOUT changing the prediction formula below. Best-effort +
+// TTL-cached so the MQTT hot path is not re-querying it per reading.
+const sensorIntelligenceService = require("./sensorIntelligenceService");
+
 // --------------------------------------------------
 // Configuration (single location)
 // --------------------------------------------------
@@ -544,7 +550,8 @@ async function getDrainMaintenance(drainId) {
       inspectionPriority: null,
       maintenanceRecommendation: null,
       reasons: [],
-      reason
+      reason,
+      sensorIntelligence: null
     };
     drainCache.set(drainId, { at: Date.now(), data: payload });
     return payload;
@@ -640,6 +647,16 @@ async function getDrainMaintenance(drainId) {
     elevatedShare: elevatedCount / series.length
   });
 
+  // Additive sensor-health context (Update #21). Best-effort + cached;
+  // a failure or missing sensor data degrades to null and never changes
+  // the maintenance prediction above.
+  let sensorIntelligence = null;
+  try {
+    sensorIntelligence = await sensorIntelligenceService.getSensorContextCached(drainId);
+  } catch (sensorErr) {
+    sensorIntelligence = null;
+  }
+
   const payload = {
     drainId: Number(row.id),
     sensorId: Number(row.sensor_id),
@@ -647,7 +664,8 @@ async function getDrainMaintenance(drainId) {
     location: row.location,
     timestamp: new Date().toISOString(),
     disclaimer: MODEL_DISCLAIMER,
-    ...prediction
+    ...prediction,
+    sensorIntelligence
   };
 
   // Audit trail (best-effort - never break the caller on failure)

@@ -337,7 +337,11 @@ async function getDrainForecast(drainId) {
     currentRiskScore: Number(detail.riskScore),
     currentRiskLevel: detail.riskLevel,
     timestamp: detail.timestamp,
-    ...forecast
+    ...forecast,
+    // Additive sensor-quality context (Update #21). Carried over from
+    // the flood-risk detail (which is itself best-effort + TTL-cached);
+    // never alters the forecast model above and degrades to null.
+    sensorIntelligence: detail.sensorIntelligence || null
   };
 }
 

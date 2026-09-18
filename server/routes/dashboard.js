@@ -10,6 +10,9 @@ const robotPathPlanning = require("../services/robotPathPlanningService");
 const mqttService = require("../services/mqttService");
 const incidentService = require("../services/incidentService");
 const fleetOptimizationService = require("../services/fleetOptimizationService");
+const historicalIntelligence = require("../services/historicalIntelligenceService");
+const missionCoordinator = require("../services/missionCoordinatorService");
+const sensorIntelligence = require("../services/sensorIntelligenceService");
 
 router.get("/", async (req, res) => {
   try {
@@ -66,12 +69,97 @@ router.get("/", async (req, res) => {
       console.log("⚠️ Dashboard fleet summary skipped:", fleetErr.message);
     }
 
+    // Historical intelligence — additive + best-effort. Describes
+    // RECORDED data only; never fabricates history and degrades to a
+    // safe INSUFFICIENT_DATA default if the historical layer fails.
+    let historicalSummary = {
+      period: historicalIntelligence.DEFAULT_PERIOD,
+      historicalIncidentCount: 0,
+      recurrentDrainCount: 0,
+      degradedDrainCount: 0,
+      historicalDataQuality: historicalIntelligence.DATA_QUALITY.INSUFFICIENT_DATA,
+      topRecurringDrains: [],
+      recentHistoricalTrend: historicalIntelligence.TREND.INSUFFICIENT_DATA
+    };
+
+    try {
+      historicalSummary = await historicalIntelligence.getDashboardSummary();
+    } catch (historyErr) {
+      console.log("⚠️ Dashboard historical summary skipped:", historyErr.message);
+    }
+
+    // Mission coordination — additive + best-effort (advisory plan
+    // counts only; never dispatches robots). Degrades to safe zeros.
+    let coordination = {
+      pendingTasks: 0,
+      assignedTasks: 0,
+      unassignedTasks: 0,
+      availableRobots: 0,
+      busyRobots: 0,
+      chargingRobots: 0,
+      coordinationConflicts: 0,
+      reassignmentRequired: 0,
+      status: "UNAVAILABLE"
+    };
+
+    try {
+      coordination = await missionCoordinator.getDashboardSummary();
+    } catch (coordErr) {
+      console.log("⚠️ Dashboard coordination summary skipped:", coordErr.message);
+    }
+
+    // Sensor intelligence — additive + best-effort. Describes real
+    // recorded sensor readings only and degrades to safe zeros.
+    let sensorIntelligenceSummary = {
+      sensorIntelligence: null,
+      sensorHealthSummary: {
+        totalSensors: 0,
+        counts: {
+          total: 0,
+          healthy: 0,
+          good: 0,
+          degraded: 0,
+          poor: 0,
+          critical: 0,
+          insufficientData: 0
+        },
+        healthDistribution: {
+          HEALTHY: 0,
+          GOOD: 0,
+          DEGRADED: 0,
+          POOR: 0,
+          CRITICAL: 0,
+          INSUFFICIENT_DATA: 0
+        },
+        averageHealthScore: null,
+        overallHealthStatus: "INSUFFICIENT_DATA"
+      },
+      sensorAnomalySummary: {
+        anomalyCount: 0,
+        anomaliesByType: {},
+        anomaliesBySeverity: {},
+        staleSensors: 0,
+        missingDataSensors: 0,
+        outOfRangeSensors: 0,
+        affectedDrains: 0
+      }
+    };
+
+    try {
+      sensorIntelligenceSummary = await sensorIntelligence.getDashboardSummary();
+    } catch (sensorErr) {
+      console.log("⚠️ Dashboard sensor intelligence skipped:", sensorErr.message);
+    }
+
     res.json({
       totalDrains: Number(totalDrains.rows[0].count),
       activeRobots: Number(activeRobots.rows[0].count),
       criticalAlerts: Number(criticalAlerts.rows[0].count),
       incidents,
-      fleet
+      fleet,
+      historicalSummary,
+      coordination,
+      ...sensorIntelligenceSummary
     });
 
   } catch (err) {

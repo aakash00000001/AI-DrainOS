@@ -26,6 +26,7 @@ const floodForecast = require("./floodForecastService");
 const maintenanceService = require("./maintenancePredictionService");
 const visionService = require("./drainVisionService");
 const socketHub = require("./socketHub");
+const sensorIntelligenceService = require("./sensorIntelligenceService");
 
 // ------------------------------------------------------------
 // Model constants (single source of truth for the prioritisation)
@@ -444,6 +445,19 @@ async function getDrainDecision(drainId) {
     zoneName: drainResult.rows[0].zone_name
   };
 
+  // Additive sensor health/anomaly context (Update #21). This never
+  // changes the priority formula or its weights - it is extra
+  // explainability only and a failure here never breaks the engine.
+  // The context is TTL-cached so the hot path is not re-querying it
+  // on every reading.
+  let sensorContext = null;
+
+  try {
+    sensorContext = await sensorIntelligenceService.getSensorContextCached(drainId);
+  } catch (sensorErr) {
+    sensorContext = null;
+  }
+
   let risk = null;
   let forecast = null;
   let maintenance = null;
@@ -599,6 +613,7 @@ async function getDrainDecision(drainId) {
         maintenance: false,
         vision: false
       },
+      sensorIntelligence: sensorContext,
       disclaimer: DECISION_DISCLAIMER,
       generatedAt: new Date().toISOString()
     };
@@ -652,6 +667,7 @@ async function getDrainDecision(drainId) {
       maintenance: !!(maintenanceReady && finiteNumber(maintenance.maintenanceScore) !== null),
       vision: !!(visionReady && finiteNumber(vision.visualRiskScore) !== null)
     },
+    sensorIntelligence: sensorContext,
     disclaimer: DECISION_DISCLAIMER,
     generatedAt: new Date().toISOString()
   };

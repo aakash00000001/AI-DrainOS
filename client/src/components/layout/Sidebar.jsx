@@ -12,7 +12,9 @@ import {
   FaSignOutAlt,
   FaListOl,
   FaAmbulance,
-  FaTruckMoving
+  FaTruckMoving,
+  FaNetworkWired,
+  FaMicrochip
 } from "react-icons/fa";
 
 import "../../styles/sidebar.css";
@@ -76,6 +78,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
             <span>Sensors</span>
           </li>
 
+          {/* Sensor Intelligence (Update #21) */}
+          <li
+            className={activePage === "sensorintelligence" ? "active" : ""}
+            onClick={() => onNavigate("sensorintelligence")}
+          >
+            <FaMicrochip />
+            <span>Sensor Intelligence</span>
+          </li>
+
           {/* Alerts */}
           <li
             className={activePage === "alerts" ? "active" : ""}
@@ -101,6 +112,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
           >
             <FaTruckMoving />
             <span>Fleet Optimization</span>
+          </li>
+
+          {/* Mission Coordination (Update #22) */}
+          <li
+            className={activePage === "missioncoordination" ? "active" : ""}
+            onClick={() => onNavigate("missioncoordination")}
+          >
+            <FaNetworkWired />
+            <span>Mission Coordination</span>
           </li>
 
           {/* AI Prediction */}

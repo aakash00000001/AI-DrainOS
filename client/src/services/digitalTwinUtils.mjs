@@ -499,6 +499,111 @@ export function normalizeAvailabilityState(value) {
   return AVAILABILITY_STATES.includes(upper) ? upper : null;
 }
 
+const SENSOR_HEALTH_RANK = {
+  CRITICAL: 0,
+  POOR: 1,
+  DEGRADED: 2,
+  GOOD: 3,
+  HEALTHY: 4,
+  INSUFFICIENT_DATA: 5
+};
+
+export const SENSOR_HEALTH_STATUSES = [
+  "HEALTHY",
+  "GOOD",
+  "DEGRADED",
+  "POOR",
+  "CRITICAL",
+  "INSUFFICIENT_DATA"
+];
+
+/**
+ * Normalize a /api/predictions/sensor-intelligence payload into the
+ * compact overlay the twin needs (Update #21). Returns null for a
+ * missing/invalid payload so callers degrade to "no sensor overlay".
+ * Read-only: never fabricates a reading or an anomaly.
+ */
+export function normalizeSensorIntelligence(payload) {
+  if (!payload || typeof payload !== "object") return null;
+
+  const sensors = asArray(payload.sensors);
+  const bySensor = {};
+  const byDrain = {};
+
+  for (const sensor of sensors) {
+    const sensorId = safeNumber(sensor && sensor.sensorId, null);
+    if (sensorId === null) continue;
+
+    const drainId = safeNumber(sensor && sensor.drainId, null);
+    const latest = sensor && sensor.latestAnomaly ? sensor.latestAnomaly : null;
+
+    const entry = {
+      sensorId,
+      drainId,
+      healthStatus:
+        sensor && sensor.healthStatus
+          ? String(sensor.healthStatus).toUpperCase()
+          : null,
+      healthScore: safeNumber(sensor && sensor.healthScore, null),
+      anomalyCount: safeNumber(sensor && sensor.anomalyCount, 0),
+      stale: Boolean(sensor && sensor.stale),
+      missingData: Boolean(sensor && sensor.missingData),
+      outOfRange: Boolean(sensor && sensor.outOfRange),
+      latestAnomaly: latest
+        ? {
+            type: latest.type ? String(latest.type).toUpperCase() : null,
+            severity: latest.severity ? String(latest.severity).toUpperCase() : null,
+            message: latest.message || null
+          }
+        : null
+    };
+
+    bySensor[sensorId] = entry;
+
+    if (drainId !== null) {
+      const existing = byDrain[drainId];
+      const rank = SENSOR_HEALTH_RANK[entry.healthStatus] ?? 6;
+      const existingRank = existing
+        ? SENSOR_HEALTH_RANK[existing.healthStatus] ?? 6
+        : 7;
+      if (!existing || rank < existingRank || (rank === existingRank && entry.anomalyCount > existing.anomalyCount)) {
+        byDrain[drainId] = entry;
+      }
+    }
+  }
+
+  const summary = payload.summary || {};
+  const counts = summary.counts || {};
+
+  return {
+    status: payload.status || null,
+    generatedAt: payload.generatedAt || null,
+    disclaimer: payload.disclaimer || null,
+    bySensor,
+    byDrain,
+    summary: {
+      totalSensors: safeNumber(summary.totalSensors, sensors.length),
+      anomalyCount: safeNumber(summary.anomalyCount, 0),
+      staleSensors: safeNumber(summary.staleSensors, 0),
+      missingDataSensors: safeNumber(summary.missingDataSensors, 0),
+      outOfRangeSensors: safeNumber(summary.outOfRangeSensors, 0),
+      affectedDrains: safeNumber(summary.affectedDrains, 0),
+      averageHealthScore: safeNumber(summary.averageHealthScore, null),
+      overallHealthStatus: summary.overallHealthStatus
+        ? String(summary.overallHealthStatus).toUpperCase()
+        : null,
+      counts: {
+        healthy: safeNumber(counts.healthy, 0),
+        good: safeNumber(counts.good, 0),
+        degraded: safeNumber(counts.degraded, 0),
+        poor: safeNumber(counts.poor, 0),
+        critical: safeNumber(counts.critical, 0),
+        insufficientData: safeNumber(counts.insufficientData, 0)
+      }
+    }
+  };
+}
+
 /**
  * Normalize a /api/fleet-optimization payload into the compact
  * overlay the twin needs. Returns null for a missing/invalid
@@ -664,6 +769,159 @@ export function normalizeFleetOptimization(payload) {
   };
 }
 
+// The twin consumes GET /api/missions/coordination (and the
+// "missionCoordinationUpdate" socket event). This overlay is READ
+// ONLY: it reports the coordinator's plan and never dispatches a
+// mission. When the endpoint is unavailable the twin degrades to
+// coordination = null and no coordination markers are drawn.
+export function normalizeMissionCoordination(payload) {
+  if (!payload || typeof payload !== "object") return null;
+
+  const summary = payload.summary || {};
+  const tasks = asArray(payload.tasks);
+  const assignments = asArray(payload.assignments);
+  const unassigned = asArray(payload.unassigned);
+  const conflicts = asArray(payload.conflicts);
+  const reassignments = asArray(payload.reassignment_required);
+  const robots = asArray(payload.robot_availability);
+
+  const assignmentByTask = new Map();
+  for (const assignment of assignments) {
+    if (assignment && assignment.task_id) {
+      assignmentByTask.set(assignment.task_id, assignment);
+    }
+  }
+
+  const byDrain = {};
+  for (const task of tasks) {
+    const drainId = safeNumber(task && task.drain_id, null);
+    if (drainId === null) continue;
+    const assignment = assignmentByTask.get(task.task_id) || null;
+    byDrain[drainId] = {
+      taskId: task.task_id || null,
+      drainId,
+      incidentId: safeNumber(task.incident_id, null),
+      zone: task.zone || null,
+      location: task.location || null,
+      severity:
+        normalizeLevel(task.severity) ||
+        (task.severity ? String(task.severity).toUpperCase() : null),
+      priorityScore: safeNumber(task.priority_score, null),
+      priorityStatus: task.priority_status || null,
+      coordinationState: task.coordination_state || null,
+      assignedRobotId: safeNumber(task.assigned_robot_id, null),
+      assignedRobotName: assignment ? assignment.robot_name || null : null,
+      routeMode: task.route_mode || (assignment ? assignment.route_mode : null) || null,
+      candidateScore: safeNumber(task.candidate_score, null),
+      estimatedTravelTime: assignment
+        ? safeNumber(assignment.estimated_travel_time, null)
+        : null,
+      chargingRequired: Boolean(assignment && assignment.charging_required),
+      unassignedReason: task.unassigned_reason || null,
+      requiredAction: task.required_action || null
+    };
+  }
+
+  const unassignedByDrain = {};
+  for (const item of unassigned) {
+    const drainId = safeNumber(item && item.drain_id, null);
+    if (drainId === null) continue;
+    unassignedByDrain[drainId] = {
+      taskId: item.task_id || null,
+      drainId,
+      severity:
+        normalizeLevel(item.severity) ||
+        (item.severity ? String(item.severity).toUpperCase() : null),
+      priorityScore: safeNumber(item.priority_score, null),
+      reason: item.reason || null,
+      requiredAction: item.required_action || null
+    };
+  }
+
+  const byRobot = {};
+  for (const robot of robots) {
+    const robotId = safeNumber(robot && robot.robot_id, null);
+    if (robotId === null) continue;
+    byRobot[robotId] = {
+      robotId,
+      availabilityState: normalizeAvailabilityState(robot.availability_state),
+      batteryLevel: safeNumber(robot.battery_level, null),
+      currentMissionId: safeNumber(robot.current_mission_id, null),
+      targetDrainId: safeNumber(robot.target_drain_id, null),
+      taskId: null,
+      drainId: null,
+      candidateScore: null,
+      routeMode: null
+    };
+  }
+
+  for (const assignment of assignments) {
+    const robotId = safeNumber(assignment && assignment.robot_id, null);
+    const drainId = safeNumber(assignment && assignment.drain_id, null);
+    if (robotId === null || byRobot[robotId] === undefined) continue;
+    byRobot[robotId] = {
+      ...byRobot[robotId],
+      taskId: assignment.task_id || null,
+      drainId,
+      candidateScore: safeNumber(assignment.candidate_score, null),
+      routeMode: assignment.route_mode || null
+    };
+  }
+
+  const criticalUnassignedDrainIds = Object.values(unassignedByDrain)
+    .filter(
+      (item) =>
+        item.severity === "CRITICAL" ||
+        (item.priorityScore !== null && item.priorityScore >= 75)
+    )
+    .map((item) => item.drainId);
+
+  return {
+    status: payload.status || null,
+    mode: payload.mode || null,
+    generatedAt: payload.generated_at || null,
+    disclaimer: payload.disclaimer || null,
+    warnings: asArray(payload.warnings),
+    byDrain,
+    byRobot,
+    unassignedByDrain,
+    conflicts: conflicts.map((conflict) => ({
+      type: conflict && conflict.type ? conflict.type : "CONFLICT",
+      severity:
+        conflict && conflict.severity
+          ? String(conflict.severity).toUpperCase()
+          : null,
+      message: conflict && conflict.message ? conflict.message : null,
+      robotId: safeNumber(conflict && conflict.robot_id, null),
+      drainId: safeNumber(conflict && conflict.drain_id, null),
+      requiredAction: conflict && conflict.required_action ? conflict.required_action : null
+    })),
+    reassignments: reassignments.map((item) => ({
+      missionId: safeNumber(item && item.mission_id, null),
+      drainId: safeNumber(item && item.drain_id, null),
+      currentRobotId: safeNumber(item && item.current_robot_id, null),
+      currentRobotName: item && item.current_robot_name ? item.current_robot_name : null,
+      reason: item && item.reason ? item.reason : null,
+      requiredAction: item && item.required_action ? item.required_action : null
+    })),
+    criticalUnassignedDrainIds,
+    summary: {
+      totalTasks: safeNumber(summary.total_tasks, 0),
+      assignedTasks: safeNumber(summary.assigned_tasks, 0),
+      unassignedTasks: safeNumber(summary.unassigned_tasks, 0),
+      availableRobots: safeNumber(summary.available_robots, 0),
+      busyRobots: safeNumber(summary.busy_robots, 0),
+      chargingRobots: safeNumber(summary.charging_robots, 0),
+      lowBatteryRobots: safeNumber(summary.low_battery_robots, 0),
+      conflicts: safeNumber(summary.coordination_conflicts, conflicts.length),
+      reassignmentRequired: safeNumber(
+        summary.reassignment_required,
+        reassignments.length
+      )
+    }
+  };
+}
+
 // ------------------------------------------------------------
 // Live socket state reducer (single immutable reducer shared by
 // the Digital Twin page/preview so every event path is pure and
@@ -697,6 +955,18 @@ export function digitalTwinReducer(state, action) {
             ? action.fleet
             : state.fleet
               ? state.fleet
+              : null,
+        coordination:
+          action.coordination !== undefined
+            ? action.coordination
+            : state.coordination
+              ? state.coordination
+              : null,
+        sensorIntelligence:
+          action.sensorIntelligence !== undefined
+            ? action.sensorIntelligence
+            : state.sensorIntelligence
+              ? state.sensorIntelligence
               : null,
         loadError: action.loadError,
         refreshNonce: (state.refreshNonce || 0) + 1
@@ -829,6 +1099,18 @@ export function digitalTwinReducer(state, action) {
       const fleet = normalizeFleetOptimization(action.payload);
       if (!fleet) return state;
       return { ...state, fleet };
+    }
+
+    case "MISSION_COORDINATION_UPDATE": {
+      const coordination = normalizeMissionCoordination(action.payload);
+      if (!coordination) return state;
+      return { ...state, coordination };
+    }
+
+    case "SENSOR_INTELLIGENCE_UPDATE": {
+      const sensorIntelligence = normalizeSensorIntelligence(action.payload);
+      if (!sensorIntelligence) return state;
+      return { ...state, sensorIntelligence };
     }
 
     case "ROUTE_UPDATE": {

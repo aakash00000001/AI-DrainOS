@@ -346,6 +346,9 @@ Every real change emits `incidentUpdate` through the existing shared hub:
 - **Response** (200 OK): `{ "totalDrains": 7, "activeRobots": 1, "criticalAlerts": 2, "incidents": { "counts": { "active": 1, "critical": 1, "responding": 0, "resolved": 2, "open": 1, "acknowledged": 0, "total": 3 }, "latest": [ ...incidents ] }, "fleet": { "totalRobots": 5, "availableRobots": 2, "busyRobots": 1, "chargingRobots": 1, "lowBatteryRobots": 1, "activeTasks": 1, "unassignedTasks": 0, "recommendedAssignments": 1, "fleetUtilization": 40, "status": "OK" } }`
   - `incidents` is **additive** (Update #18) and best-effort: existing fields are unchanged.
   - `fleet` is **additive** (Update #19), camelCase and best-effort. See [fleet-optimization.md](fleet-optimization.md).
+  - `historicalSummary` is **additive** (Update #20A), camelCase and best-effort: `{ "period", "historicalIncidentCount", "recurrentDrainCount", "degradedDrainCount", "historicalDataQuality", "topRecurringDrains", "recentHistoricalTrend" }`. See [historical-intelligence.md](historical-intelligence.md).
+  - `coordination` is **additive** (Update #22), camelCase and best-effort: `{ "pendingTasks", "assignedTasks", "unassignedTasks", "availableRobots", "busyRobots", "chargingRobots", "coordinationConflicts", "reassignmentRequired", "status" }`. See [mission-coordination.md](mission-coordination.md).
+  - `sensorIntelligence`, `sensorHealthSummary` and `sensorAnomalySummary` are **additive** (Update #21), camelCase and best-effort: total/healthy/degraded/critical sensor counts, average health, anomaly/stale/missing-data/out-of-range counts and affected drains. See [sensor-intelligence.md](sensor-intelligence.md).
 
 ### `GET /api/dashboard/fleet`
 - **Access**: Public / Authenticated
@@ -394,7 +397,7 @@ Every real change emits `incidentUpdate` through the existing shared hub:
   - `total_cleanings` / `robot_operations` / `total_missions`: mission records.
   - `blockages_detected`: open Critical alerts.
   - `flood_predictions`: sensor readings count.
-  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)), and additive fleet fields `fleet_status`, `fleet_total_robots`, `fleet_available_robots`, `fleet_busy_robots`, `fleet_charging_robots`, `fleet_low_battery_robots`, `fleet_utilization`, `fleet_active_tasks`, `fleet_assigned_tasks`, `fleet_unassigned_tasks`, `fleet_assignment_coverage`, `fleet_average_response_minutes` (see [fleet-optimization.md](fleet-optimization.md)).
+  - Also includes `risk_average_score` / `risk_*` fields (see [flood-risk.md](flood-risk.md)), `forecast_average_risk` / `forecast_*` fields (see [forecasting.md](forecasting.md)), `maintenance_average_score` / `maintenance_*` fields (see [maintenance-prediction.md](maintenance-prediction.md)), `vision_average_visual_risk` / `vision_*` fields (see [vision-inspection.md](vision-inspection.md)), and additive incident fields `incident_total`, `incident_active`, `incident_responding`, `incident_resolved`, `incident_by_severity`, `incident_average_response_minutes`, `incident_average_resolution_minutes` (see [incidents.md](incidents.md)), additive fleet fields `fleet_status`, `fleet_total_robots`, `fleet_available_robots`, `fleet_busy_robots`, `fleet_charging_robots`, `fleet_low_battery_robots`, `fleet_utilization`, `fleet_active_tasks`, `fleet_assigned_tasks`, `fleet_unassigned_tasks`, `fleet_assignment_coverage`, `fleet_average_response_minutes` (see [fleet-optimization.md](fleet-optimization.md)), and additive historical fields `historical_period`, `historical_incident_count`, `historical_resolved_incident_count`, `historical_mission_count`, `historical_alert_count`, `historical_sensor_reading_count`, `historical_recurrent_drain_count`, `historical_degraded_drain_count`, `historical_data_quality`, `historical_recent_trend`, `historical_top_recurring_drains` (see [historical-intelligence.md](historical-intelligence.md)), and additive coordination fields `coordination_status`, `coordination_pending_tasks`, `coordination_assigned_tasks`, `coordination_unassigned_tasks`, `coordination_available_robots`, `coordination_busy_robots`, `coordination_charging_robots`, `coordination_conflict_count`, `coordination_reassignment_required`, `coordination_average_task_priority`, `coordination_average_candidate_score` (see [mission-coordination.md](mission-coordination.md)).
 
 ### `GET /api/analytics/monthly`
 - **Access**: Public / Authenticated
@@ -438,10 +441,25 @@ Every real change emits `incidentUpdate` through the existing shared hub:
 - **Access**: Public / Authenticated
 - **Response** (200 OK): Fleet optimization analytics in snake_case: `status`, `generated_at`, `robot_utilization`, `available_robots`, `busy_robots`, `charging_robots`, `low_battery_robots`, `offline_robots`, `unavailable_robots`, `total_robots`, `task_assignment_coverage`, `active_tasks`, `assigned_tasks`, `unassigned_task_count`, `average_estimated_response_seconds` / `average_estimated_response_minutes`, `battery_risk_count`, `charging_requirement_count`, `unassigned_reasons`, and `disclaimer`. Averages are `null` when there is not enough real data. See [fleet-optimization.md](fleet-optimization.md).
 
+### `GET /api/analytics/historical`
+- **Access**: Public / Authenticated
+- **Query**: `?period=24h|7d|30d|90d` (alias `?window=`), optional `?drainId=`.
+- **Response** (200 OK): Full historical overview (same shape as `GET /api/historical`). See [historical-intelligence.md](historical-intelligence.md).
+- **Response** (400): `{ "error": "Invalid period", "allowed_periods": ["24h", "7d", "30d", "90d"] }`.
+
+### `GET /api/analytics/coordination`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Mission coordination analytics in snake_case: `status`, `generated_at`, `task_assignment_count`, `task_completion_count`, `task_cancelled_count`, `unassigned_task_count`, `reassignment_count`, `average_assignment_time_seconds` (always `null` + `average_assignment_time_available: false` with an explicit `average_assignment_time_reason`), `average_mission_duration_seconds`, `robot_utilization`, coherent `coordination_conflicts`, `active_tasks`, `pending_tasks`, the flat `coordination_*` aliases, `coordination_average_task_priority`, `coordination_average_candidate_score`, `coordination_status` and `disclaimer`. See [mission-coordination.md](mission-coordination.md).
+
 ### Advisory Socket event
 Fleet optimization emits `fleetOptimizationUpdate` (signature-guarded, only on meaningful change) through the existing shared hub:
 ```json
 { "status": "OK", "summary": { "active_tasks": 1, "unassigned_tasks": 0 }, "tasks": [], "recommendations": [], "robots": [], "unassigned": [], "generated_at": "..." }
+```
+
+Mission coordination emits `missionCoordinationUpdate` (signature-guarded, only on meaningful change) through the same hub:
+```json
+{ "status": "OK", "mode": "ADVISORY_PLAN", "summary": { "total_tasks": 4, "assigned_tasks": 3, "unassigned_tasks": 1, "coordination_conflicts": 0, "reassignment_required": 0 }, "assignments": [], "unassigned": [], "conflicts": [], "reassignment_required": [], "generated_at": "..." }
 ```
 
 ---
@@ -491,3 +509,108 @@ See [fleet-optimization.md](fleet-optimization.md).
 - **Path Params**: `taskId` = `incident:<id>` or `drain:<id>`.
 - **Response** (200 OK): `status`, `generated_at`, `task`, `recommendation`, `unassigned`, `disclaimer`.
 - **Response** (404): `{ "error": "Task not found" }`
+
+---
+
+## Mission Coordination API (`/api/missions/coordination`)
+
+Fleet-wide **autonomous mission scheduling & multi-robot coordination** (Update #22). Read
+endpoints are public and never change state; the only state-changing endpoint is `POST /plan`
+(auth-protected). `missionEngine.js` remains the sole dispatch authority — advisory mode never
+mutates missions and autonomous mode dispatches only through `missionEngine.dispatchMission`.
+See [mission-coordination.md](mission-coordination.md).
+
+### `GET /api/missions/coordination`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Full advisory plan: `status`, `mode`, `generated_at`, `summary`,
+  `tasks`, `assignments`, `unassigned`, `conflicts`, `reassignment_required`,
+  `robot_availability`, `warnings` and `disclaimer`. `status` is one of
+  `OK | NO_TASKS | NO_ROBOTS | NO_ELIGIBLE_ROBOT | NO_FEASIBLE_ROUTE | NO_COORDINATES | INSUFFICIENT_DATA`.
+
+### `GET /api/missions/coordination/tasks`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `{ "status": "OK", "generated_at", "tasks" }` — the live task queue.
+
+### `GET /api/missions/coordination/robots`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Robot eligibility view with `availability_state`
+  (`AVAILABLE | BUSY | CHARGING | LOW_BATTERY | OFFLINE | UNAVAILABLE`), battery, current
+  mission/target.
+
+### `GET /api/missions/coordination/conflicts`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Explicit conflict list (`type`, `severity`, `message`,
+  `required_action`, robot/drain ids). Conflicts are reported, never silently resolved.
+
+### `GET /api/missions/coordination/summary`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): `status`, `mode`, `generated_at`, `summary`, `warnings`, `disclaimer`.
+
+### `GET /api/missions/coordination/analytics`
+- **Access**: Public / Authenticated
+- **Response** (200 OK): Same shape as `/api/analytics/coordination`.
+
+### `POST /api/missions/coordination/plan`
+- **Access**: Authenticated (`Bearer <token>`)
+- **Body / Query**: `{ "mode": "advisory" | "autonomous" }` (also accepts
+  `ADVISORY_PLAN` / `AUTONOMOUS_PLAN`; defaults to advisory).
+- **Response** (200 OK): The plan; in autonomous mode also `execution: { executed, failed }`.
+- **Response** (400): `{ "error": "Invalid mode", "allowed_modes": ["advisory", "autonomous"] }`.
+- **Response** (401): missing/invalid token.
+
+---
+
+## Historical Intelligence API (`/api/historical`)
+
+An **evidence/analytics**, strictly **read-only** layer (Update #20A). It describes
+what the stored records actually show over a bounded window and never fabricates data
+(a metric with no samples is `null`; a period with no records is `INSUFFICIENT_DATA`).
+No new tables, no writes, no dispatches. All routes are Public.
+
+Common query parameters (all routes except where noted):
+
+| Param | Values | Notes |
+| --- | --- | --- |
+| `period` | `24h`, `7d`, `30d` (default), `90d` | alias `window` |
+| `drainId` | positive integer | optional per-drain filter |
+
+- **Response** (400): `{ "error": "Invalid period", "allowed_periods": ["24h", "7d", "30d", "90d"] }` or `{ "error": "Invalid drainId" }`.
+
+See [historical-intelligence.md](historical-intelligence.md) for the full contract,
+metric definitions, data-quality labels and limitations.
+
+### `GET /api/historical`
+- **Response** (200 OK): Full historical overview: `period`, `start_time`, `end_time`, `sensors`, `drains`, `incidents`, `missions`, `robots`, `alerts`, `patterns`, `comparison`, `drain_health`, `data_quality`, `generated_at`, `disclaimer`.
+
+### `GET /api/historical/overview`
+- Alias of `GET /api/historical`.
+
+### `GET /api/historical/summary`
+- **Response** (200 OK): Compact summary: `period`, `historical_incident_count`, `historical_resolved_count`, `historical_mission_count`, `historical_alert_count`, `historical_sensor_reading_count`, `recurrent_drain_count`, `degraded_drain_count`, `historical_data_quality`, `historical_sufficient_data`, `drain_health_by_status`, `top_recurring_drains`, `recent_historical_trend`, `disclaimer`, `generated_at`.
+
+### `GET /api/historical/sensors`
+- Per-sensor reading counts, earliest/latest timestamps and `average` / `minimum` / `maximum` / `first` / `last` / `change` / `trend` for water level, gas level and temperature.
+
+### `GET /api/historical/trends`
+- Per-sensor trend labels only (`RISING` / `FALLING` / `STABLE` / `INSUFFICIENT_DATA`).
+
+### `GET /api/historical/drains`
+- Per-drain history (`incident_count`, `alert_count`, `mission_count`, maintenance/vision event counts, last-activity timestamps) + descriptive `historical_health` label with reasons and an `evidence` object. Live `current_status` / `current_blockage_level` are kept separate.
+
+### `GET /api/historical/incidents`
+- Incident counts, severity/status/source breakdowns, top drains, daily buckets and real timing averages; each timing average is `null` when no row carries the required timestamp.
+
+### `GET /api/historical/missions`
+- Mission counts, status breakdown, per-drain and per-robot history, completion rate and average duration. Response time is `null` (no response timestamp in the schema).
+
+### `GET /api/historical/robots`
+- Per-robot response history (`mission_count`, `completed`, `assigned`, `completion_rate`, last activity).
+
+### `GET /api/historical/alerts`
+- Alert counts, severity/type breakdowns, top drains and daily buckets.
+
+### `GET /api/historical/patterns`
+- Descriptive hourly/weekday distributions for incidents and alerts with peak hour/day (only when the sample is `>= 3`).
+
+### `GET /api/historical/comparison`
+- Live `sensors` value (**CURRENT**) vs window average (**HISTORICAL**) with a separate **CHANGE**, and incident count vs the immediately preceding window of equal length.

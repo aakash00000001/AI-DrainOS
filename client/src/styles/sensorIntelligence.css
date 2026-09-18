@@ -1,0 +1,311 @@
+/* ============================================================
+   AI-DrainOS — Sensor Intelligence styles (Update #21)
+   Self-contained, additive. Prefixed with `si-` to avoid clashes.
+   ============================================================ */
+
+.si-shell,
+.si-page {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 20px;
+  color: #0f172a;
+}
+
+.si-shell-header,
+.si-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.si-shell-header h2,
+.si-page-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.si-subtitle {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.si-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.si-updated {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.si-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.si-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.si-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.si-stat svg {
+  color: #64748b;
+  font-size: 1.05rem;
+}
+
+.si-stat strong {
+  display: block;
+  font-size: 1.15rem;
+  line-height: 1.1;
+}
+
+.si-stat span {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.si-stat.stat-warn { border-color: #fecaca; }
+.si-stat.stat-danger { border-color: #fca5a5; background: #fff1f2; }
+
+.si-health {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.si-health-healthy { background: #dcfce7; color: #166534; }
+.si-health-good { background: #d1fae5; color: #047857; }
+.si-health-degraded { background: #fef9c3; color: #854d0e; }
+.si-health-poor { background: #ffedd5; color: #9a3412; }
+.si-health-critical { background: #fee2e2; color: #991b1b; }
+.si-health-unknown { background: #e2e8f0; color: #475569; }
+
+.si-sev {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+.si-sev-critical { background: #fee2e2; color: #991b1b; }
+.si-sev-high { background: #ffedd5; color: #9a3412; }
+.si-sev-moderate { background: #fef9c3; color: #854d0e; }
+.si-sev-low { background: #dcfce7; color: #166534; }
+
+.si-sensor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.si-sensor {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.si-sensor-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.si-sensor-id {
+  font-family: monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.si-sensor-meta {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.si-sensor-anomaly {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.si-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.si-disclaimer {
+  margin: 12px 0 0;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.si-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.si-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.si-card-header h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.si-distribution {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.si-dist-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 40px;
+  align-items: center;
+  gap: 10px;
+}
+
+.si-dist-bar {
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.si-dist-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+.si-dist-fill.si-health-healthy { background: #22c55e; }
+.si-dist-fill.si-health-good { background: #10b981; }
+.si-dist-fill.si-health-degraded { background: #eab308; }
+.si-dist-fill.si-health-poor { background: #f97316; }
+.si-dist-fill.si-health-critical { background: #ef4444; }
+.si-dist-fill.si-health-unknown { background: #94a3b8; }
+
+.si-dist-count {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: right;
+  color: #334155;
+}
+
+.si-table-scroll {
+  max-height: 340px;
+  overflow: auto;
+}
+
+.si-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.si-table th,
+.si-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid #edf2f7;
+  vertical-align: top;
+}
+
+.si-table th {
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #475569;
+}
+
+.si-no-rows {
+  text-align: center;
+  color: #94a3b8;
+  padding: 16px;
+}
+
+.si-id {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+.si-muted { color: #94a3b8; }
+
+.cell-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}

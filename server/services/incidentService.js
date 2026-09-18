@@ -35,8 +35,13 @@ const VALID_SOURCES = [
   "FORECAST",
   "MAINTENANCE",
   "VISION",
+  "SENSOR",
   "MANUAL"
 ];
+
+// A sensor-integrity issue is an observation, not an emergency
+// response, so the SENSOR source never auto-assigns a robot.
+const NON_DISPATCH_SOURCES = ["SENSOR"];
 
 // route_status is an honest snapshot of the path-planning outcome.
 const ROUTE_STATUS_MANUAL = "MANUAL";
@@ -423,9 +428,11 @@ async function createIncident({
   emitIncidentUpdate("created", created);
 
   // Emergency incidents are auto-assigned by the existing planner;
-  // MANUAL incidents only carry a robot when one was supplied.
+  // MANUAL incidents only carry a robot when one was supplied, and
+  // SENSOR incidents never dispatch a robot.
   const shouldAssign =
     (source !== "MANUAL" || severity === "CRITICAL") &&
+    !NON_DISPATCH_SOURCES.includes(source) &&
     !assignedRobotId;
 
   if (shouldAssign || assignedRobotId) {

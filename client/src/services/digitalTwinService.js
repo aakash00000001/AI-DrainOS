@@ -37,7 +37,9 @@ import {
   buildMetrics,
   normalizeIncidentSignal,
   buildActiveIncidentByDrain,
-  normalizeFleetOptimization
+  normalizeFleetOptimization,
+  normalizeMissionCoordination,
+  normalizeSensorIntelligence
 } from "./digitalTwinUtils.mjs";
 
 function coordinatePoints(drains, robots, stations) {
@@ -64,7 +66,9 @@ export async function loadDigitalTwinData() {
     routesRes,
     decisionsRes,
     incidentsRes,
-    fleetRes
+    fleetRes,
+    coordinationRes,
+    sensorIntelligenceRes
   ] = await Promise.allSettled([
     axios.get(`${API_URL}/drains`),
     axios.get(`${API_URL}/sensors`),
@@ -73,7 +77,9 @@ export async function loadDigitalTwinData() {
     axios.get(`${API_URL}/dashboard/robot-routes`),
     axios.get(`${API_URL}/dashboard/decisions`),
     axios.get(`${API_URL}/incidents/active`),
-    axios.get(`${API_URL}/fleet-optimization`)
+    axios.get(`${API_URL}/fleet-optimization`),
+    axios.get(`${API_URL}/missions/coordination`),
+    axios.get(`${API_URL}/predictions/sensor-intelligence`)
   ]);
 
   const rawDrains = drainsRes.status === "fulfilled" ? asArray(drainsRes.value.data) : [];
@@ -186,12 +192,50 @@ export async function loadDigitalTwinData() {
       ? normalizeFleetOptimization(fleetRes.value.data)
       : null;
 
+  // Mission coordination overlay (Update #22) — additive, READ ONLY.
+  // A missing/failed endpoint degrades to coordination = null and the
+  // twin draws no coordination markers.
+  const coordination =
+    coordinationRes.status === "fulfilled"
+      ? normalizeMissionCoordination(coordinationRes.value.data)
+      : null;
+
+  // Sensor intelligence overlay (Update #21) — additive, READ ONLY.
+  // A missing/failed endpoint degrades to null and markers keep their
+  // existing appearance (no invented health or anomaly values).
+  const sensorIntelligence =
+    sensorIntelligenceRes.status === "fulfilled"
+      ? normalizeSensorIntelligence(sensorIntelligenceRes.value.data)
+      : null;
+
+  if (sensorIntelligence) {
+    for (const sensor of sensors) {
+      const intel = sensorIntelligence.bySensor[sensor.id];
+      if (intel) {
+        sensor.healthStatus = intel.healthStatus;
+        sensor.healthScore = intel.healthScore;
+        sensor.anomalyCount = intel.anomalyCount;
+        sensor.stale = intel.stale;
+        sensor.missingData = intel.missingData;
+        sensor.latestAnomaly = intel.latestAnomaly;
+      }
+    }
+  }
+
   const metrics = buildMetrics(drains, robots, routes, {
     decisionsTotal: topPriority.length,
     activeIncidents: Object.keys(activeIncidentByDrain).length,
     fleetActiveTasks: fleet ? fleet.summary.activeTasks : 0,
     fleetUnassignedTasks: fleet ? fleet.summary.unassignedTasks : 0,
     fleetAvailableRobots: fleet ? fleet.summary.availableRobots : 0,
+    coordinationAssignedTasks: coordination ? coordination.summary.assignedTasks : 0,
+    coordinationUnassignedTasks: coordination ? coordination.summary.unassignedTasks : 0,
+    coordinationConflicts: coordination ? coordination.summary.conflicts : 0,
+    sensorHealthOverall: sensorIntelligence ? sensorIntelligence.summary.overallHealthStatus : null,
+    sensorAnomalies: sensorIntelligence ? sensorIntelligence.summary.anomalyCount : 0,
+    sensorStaleSensors: sensorIntelligence ? sensorIntelligence.summary.staleSensors : 0,
+    sensorMissingDataSensors: sensorIntelligence ? sensorIntelligence.summary.missingDataSensors : 0,
+    sensorCriticalSensors: sensorIntelligence ? sensorIntelligence.summary.counts.critical : 0,
     dataSources: {
       drains: drainsRes.status === "fulfilled",
       sensors: sensorsRes.status === "fulfilled",
@@ -200,7 +244,9 @@ export async function loadDigitalTwinData() {
       routes: routesRes.status === "fulfilled",
       decisions: decisionsRes.status === "fulfilled",
       incidents: incidentsRes.status === "fulfilled",
-      fleetOptimization: fleetRes.status === "fulfilled"
+      fleetOptimization: fleetRes.status === "fulfilled",
+      missionCoordination: coordinationRes.status === "fulfilled",
+      sensorIntelligence: sensorIntelligenceRes.status === "fulfilled"
     }
   });
 
@@ -212,7 +258,9 @@ export async function loadDigitalTwinData() {
     routesRes.status !== "fulfilled" && "routes",
     decisionsRes.status !== "fulfilled" && "decisions",
     incidentsRes.status !== "fulfilled" && "incidents",
-    fleetRes.status !== "fulfilled" && "fleetOptimization"
+    fleetRes.status !== "fulfilled" && "fleetOptimization",
+    coordinationRes.status !== "fulfilled" && "missionCoordination",
+    sensorIntelligenceRes.status !== "fulfilled" && "sensorIntelligence"
   ].filter(Boolean);
 
   return {
@@ -226,6 +274,8 @@ export async function loadDigitalTwinData() {
     incidents,
     activeIncidentByDrain,
     fleet,
+    coordination,
+    sensorIntelligence,
     origin,
     metrics,
     loadError

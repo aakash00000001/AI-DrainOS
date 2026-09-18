@@ -10,6 +10,8 @@ const { startMqttService } = require("./services/mqttService");
 const socketHub = require("./services/socketHub");
 const incidentService = require("./services/incidentService");
 const fleetOptimizationService = require("./services/fleetOptimizationService");
+const missionCoordinatorService = require("./services/missionCoordinatorService");
+const sensorIntelligenceService = require("./services/sensorIntelligenceService");
 
 require("dotenv").config();
 
@@ -588,6 +590,35 @@ setInterval(async () => {
       await fleetOptimizationService.evaluateAndEmitFleetOptimization();
     } catch (fleetErr) {
       console.log("⚠️ fleetOptimizationUpdate skipped:", fleetErr.message);
+    }
+
+    // ==================================================
+    // 12. MISSION COORDINATION (advisory)
+    // ==================================================
+    // Computes multi-robot scheduling and emits
+    // `missionCoordinationUpdate` ONLY when the coordination-relevant
+    // state actually changed (signature-guarded inside the service).
+    // Advisory: never dispatches from the live loop.
+
+    try {
+      await missionCoordinatorService.evaluateAndEmitMissionCoordination();
+    } catch (coordErr) {
+      console.log("⚠️ missionCoordinationUpdate skipped:", coordErr.message);
+    }
+
+    // ==================================================
+    // 13. SENSOR INTELLIGENCE (additive)
+    // ==================================================
+    // Computes bounded sensor health + anomaly detection and emits
+    // `sensorIntelligenceUpdate` ONLY when the health/anomaly state
+    // actually changed (signature-guarded inside the service, so it
+    // is never emitted on every 5 s tick). Read-only: never touches
+    // missionEngine and never dispatches robots.
+
+    try {
+      await sensorIntelligenceService.evaluateAndEmitSensorIntelligence();
+    } catch (sensorErr) {
+      console.log("⚠️ sensorIntelligenceUpdate skipped:", sensorErr.message);
     }
 
   } catch (err) {

@@ -19,6 +19,10 @@ import EmergencyResponsePanel from "./components/EmergencyResponsePanel";
 import IncidentsPage from "./components/IncidentsPage";
 import FleetOptimizationPanel from "./components/FleetOptimizationPanel";
 import FleetOptimizationPage from "./components/FleetOptimizationPage";
+import MissionCoordinationPanel from "./components/MissionCoordinationPanel";
+import MissionCoordinationPage from "./components/MissionCoordinationPage";
+import SensorIntelligencePanel from "./components/SensorIntelligencePanel";
+import SensorIntelligencePage from "./components/SensorIntelligencePage";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -160,6 +164,38 @@ function App() {
 
     });
 
+    socket.on("missionCoordinationUpdate", (payload) => {
+
+      if (!payload || !payload.summary) return;
+
+      const { summary, status } = payload;
+
+      // Only surface actionable coordination problems; routine
+      // recomputations stay silent to avoid noise.
+      if (summary.unassigned_tasks > 0 || summary.coordination_conflicts > 0 || status === "NO_ELIGIBLE_ROBOT") {
+        toast.warning(
+          `🤝 Coordination: ${summary.assigned_tasks}/${summary.total_tasks} tasks planned · ${summary.unassigned_tasks} unassigned`
+        );
+      }
+
+    });
+
+    socket.on("sensorIntelligenceUpdate", (payload) => {
+
+      if (!payload || !payload.summary) return;
+
+      const { summary } = payload;
+
+      // Only surface severe sensor integrity problems; routine
+      // recomputations stay silent to avoid noise.
+      if (summary.counts && summary.counts.critical > 0) {
+        toast.warning(
+          `📡 Sensor integrity: ${summary.counts.critical} sensor(s) critical · ${summary.anomalyCount} anomaly signal(s)`
+        );
+      }
+
+    });
+
     return () => {
 
       socket.off("connect");
@@ -172,6 +208,8 @@ function App() {
       socket.off("decisionUpdate");
       socket.off("incidentUpdate");
       socket.off("fleetOptimizationUpdate");
+      socket.off("missionCoordinationUpdate");
+      socket.off("sensorIntelligenceUpdate");
 
     };
 
@@ -305,6 +343,14 @@ function App() {
             onOpen={() => handleNavigate("fleetoptimization")}
           />
 
+          <MissionCoordinationPanel
+            onOpen={() => handleNavigate("missioncoordination")}
+          />
+
+          <SensorIntelligencePanel
+            onOpen={() => handleNavigate("sensorintelligence")}
+          />
+
           <DigitalTwinPreview
             onOpen={() => handleNavigate("digitaltwin")}
           />
@@ -405,6 +451,42 @@ function App() {
           <h2>🚚 Fleet Optimization</h2>
 
           <FleetOptimizationPage />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Mission Coordination (Update #22)
+    if (activePage === "missioncoordination") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>🤝 Mission Coordination</h2>
+
+          <MissionCoordinationPage />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Sensor Intelligence (Update #21)
+    if (activePage === "sensorintelligence") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>📡 Sensor Intelligence</h2>
+
+          <SensorIntelligencePage />
 
         </div>
 

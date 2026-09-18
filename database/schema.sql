@@ -211,7 +211,7 @@ CREATE TABLE incidents (
   title TEXT,
   description TEXT,
   source VARCHAR(30) NOT NULL DEFAULT 'AI_DECISION'
-    CHECK (source IN ('AI_DECISION', 'FLOOD_RISK', 'FORECAST', 'MAINTENANCE', 'VISION', 'MANUAL')),
+    CHECK (source IN ('AI_DECISION', 'FLOOD_RISK', 'FORECAST', 'MAINTENANCE', 'VISION', 'SENSOR', 'MANUAL')),
   decision_score INTEGER
     CHECK (decision_score IS NULL OR (decision_score >= 0 AND decision_score <= 100)),
   decision_level VARCHAR(20),

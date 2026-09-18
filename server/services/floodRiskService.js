@@ -23,6 +23,11 @@
 
 const pool = require("../config/db");
 
+// Additive sensor-intelligence context (Update #21). Exposes a
+// descriptive sensor-health/anomaly block on the per-drain detail
+// WITHOUT changing the risk formula below. Best-effort + TTL-cached.
+const sensorIntelligenceService = require("./sensorIntelligenceService");
+
 // --------------------------------------------------
 // Configuration (single location)
 // --------------------------------------------------
@@ -412,6 +417,16 @@ async function buildDrainRiskDetail(drainId) {
     thresholds
   });
 
+  // Additive sensor-health/anomaly context (Update #21). Best-effort:
+  // a failure or a drain without sensor data degrades to null and
+  // never changes the risk result above.
+  let sensorIntelligence = null;
+  try {
+    sensorIntelligence = await sensorIntelligenceService.getSensorContextCached(drainId);
+  } catch (sensorErr) {
+    sensorIntelligence = null;
+  }
+
   return {
     drainId: Number(row.id),
     sensorId: Number(row.sensor_id),
@@ -421,7 +436,8 @@ async function buildDrainRiskDetail(drainId) {
     gasLevel: Number(row.gas_level),
     temperature: Number(row.temperature),
     timestamp: row.recorded_at,
-    ...risk
+    ...risk,
+    sensorIntelligence
   };
 }
 

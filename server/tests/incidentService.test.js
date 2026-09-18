@@ -50,6 +50,7 @@ test("1. Lifecycle constants match the documented contract", () => {
     "FORECAST",
     "MAINTENANCE",
     "VISION",
+    "SENSOR",
     "MANUAL"
   ]);
 });

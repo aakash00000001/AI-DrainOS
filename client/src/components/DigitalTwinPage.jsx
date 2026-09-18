@@ -24,7 +24,8 @@ import {
   FaRoute,
   FaClock,
   FaSearch,
-  FaBolt
+  FaBolt,
+  FaNetworkWired
 } from "react-icons/fa";
 
 import DigitalTwin from "./DigitalTwin";
@@ -58,6 +59,8 @@ const INITIAL_STATE = {
   incidents: [],
   activeIncidentByDrain: {},
   fleet: null,
+  coordination: null,
+  sensorIntelligence: null,
   byDrain: {},
   bySensor: {}
 };
@@ -101,12 +104,13 @@ function DetailsField({ label, value }) {
 // Drain details panel (drainId, fused drain, lazy API details)
 // ------------------------------------------------------------
 
-function DrainDetails({ drain, details, fleetUnassigned }) {
+function DrainDetails({ drain, details, fleetUnassigned, coordination }) {
   const danger = drain.status === "Critical" || drain.riskLevel === "CRITICAL";
   const fleet = drain.fleet || null;
   const unassigned =
     fleetUnassigned ||
     (fleet && fleet.recommendationStatus === "UNASSIGNED" ? fleet : null);
+  const plan = coordination || null;
 
   return (
     <div>
@@ -180,6 +184,53 @@ function DrainDetails({ drain, details, fleetUnassigned }) {
             <div className="dt-field">
               <span className="dt-field-label">Required action</span>
               <span className="dt-field-value">{unassigned.requiredAction}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {plan && (
+        <div className="dt-details-grid">
+          <div className="dt-field">
+            <span className="dt-field-label">Mission coordination (advisory)</span>
+            <span
+              className="dt-field-value"
+              style={{
+                color:
+                  plan.coordinationState === "UNASSIGNED" || plan.unassignedReason
+                    ? "#dc2626"
+                    : "#7c3aed",
+                fontWeight: 600
+              }}
+            >
+              {plan.unassignedReason
+                ? `Unassigned · ${plan.unassignedReason}`
+                : `${plan.assignedRobotName || `Robot ${plan.assignedRobotId}`} · ${
+                    plan.routeMode || "route"
+                  }`}
+            </span>
+          </div>
+          {plan.priorityScore != null && (
+            <div className="dt-field">
+              <span className="dt-field-label">Coordination priority</span>
+              <span className="dt-field-value">
+                {plan.priorityScore}/100
+                {plan.priorityStatus ? ` · ${plan.priorityStatus}` : ""}
+              </span>
+            </div>
+          )}
+          {plan.estimatedTravelTime != null && (
+            <div className="dt-field">
+              <span className="dt-field-label">Coordination ETA</span>
+              <span className="dt-field-value">
+                {Math.max(1, Math.round(plan.estimatedTravelTime))}s
+              </span>
+            </div>
+          )}
+          {plan.requiredAction && (
+            <div className="dt-field">
+              <span className="dt-field-label">Required action</span>
+              <span className="dt-field-value">{plan.requiredAction}</span>
             </div>
           )}
         </div>
@@ -282,7 +333,7 @@ function DrainDetails({ drain, details, fleetUnassigned }) {
   );
 }
 
-function RobotDetails({ robot, fleetInfo }) {
+function RobotDetails({ robot, fleetInfo, coordinationInfo }) {
   return (
     <div>
       <div className="dt-section-title" style={{ color: "#16a34a" }}>
@@ -295,6 +346,41 @@ function RobotDetails({ robot, fleetInfo }) {
         <DetailsField label="Assigned zone" value={robot.zone} />
         <DetailsField label="Last active" value={formatTime(robot.lastActive)} />
       </div>
+
+      {coordinationInfo && (
+        <>
+          <div className="dt-section-title" style={{ color: "#7c3aed" }}>
+            MISSION COORDINATION (ADVISORY)
+          </div>
+          <div className="dt-details-grid">
+            <div className="dt-field">
+              <span className="dt-field-label">Availability</span>
+              <span
+                className="dt-field-value"
+                style={{ color: "#7c3aed", fontWeight: 600 }}
+              >
+                {coordinationInfo.availabilityState || "Data unavailable"}
+              </span>
+            </div>
+            <div className="dt-field">
+              <span className="dt-field-label">Planned task</span>
+              <span className="dt-field-value">
+                {coordinationInfo.drainId != null
+                  ? `Drain ${coordinationInfo.drainId}${
+                      coordinationInfo.routeMode ? ` · ${coordinationInfo.routeMode}` : ""
+                    }`
+                  : "None"}
+              </span>
+            </div>
+            {coordinationInfo.candidateScore != null && (
+              <div className="dt-field">
+                <span className="dt-field-label">Candidate score</span>
+                <span className="dt-field-value">{coordinationInfo.candidateScore}/100</span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {fleetInfo && (
         <>
@@ -335,7 +421,7 @@ function RobotDetails({ robot, fleetInfo }) {
   );
 }
 
-function SensorDetails({ sensor }) {
+function SensorDetails({ sensor, intel }) {
   return (
     <div>
       <div className="dt-section-title" style={{ color: "#06b6d4" }}>
@@ -349,7 +435,32 @@ function SensorDetails({ sensor }) {
         <DetailsField label="Gas level" value={sensor.gasLevel != null ? `${sensor.gasLevel}%` : null} />
         <DetailsField label="Temperature" value={sensor.temperature != null ? `${sensor.temperature}°C` : null} />
         <DetailsField label="Status" value={sensor.status} />
+        {/* Sensor intelligence overlay (Update #21) — read-only */}
+        <DetailsField label="Health status" value={intel ? intel.healthStatus : null} />
+        <DetailsField
+          label="Health score"
+          value={intel && intel.healthScore != null ? `${intel.healthScore}/100` : null}
+        />
+        <DetailsField label="Anomalies" value={intel ? intel.anomalyCount : null} />
+        <DetailsField
+          label="Latest signal"
+          value={
+            intel && intel.latestAnomaly
+              ? `${intel.latestAnomaly.type} / ${intel.latestAnomaly.severity}`
+              : null
+          }
+        />
       </div>
+      {intel && intel.latestAnomaly && intel.latestAnomaly.message && (
+        <div className="dt-details-grid">
+          <div className="dt-field">
+            <span className="dt-field-label" style={{ minWidth: 0 }}>
+              Anomaly detail
+            </span>
+            <span className="dt-field-value">{intel.latestAnomaly.message}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -647,6 +758,12 @@ function DigitalTwinPage({ initialView = "overview" }) {
     const onFleet = (payload) => {
       if (payload) dispatch({ type: "FLEET_OPTIMIZATION_UPDATE", payload });
     };
+    const onCoordination = (payload) => {
+      if (payload) dispatch({ type: "MISSION_COORDINATION_UPDATE", payload });
+    };
+    const onSensorIntelligence = (payload) => {
+      if (payload) dispatch({ type: "SENSOR_INTELLIGENCE_UPDATE", payload });
+    };
 
     socket.on("sensorUpdate", onSensor);
     socket.on("floodRiskUpdate", onRisk);
@@ -658,6 +775,8 @@ function DigitalTwinPage({ initialView = "overview" }) {
     socket.on("dashboardUpdate", onDashboard);
     socket.on("incidentUpdate", onIncident);
     socket.on("fleetOptimizationUpdate", onFleet);
+    socket.on("missionCoordinationUpdate", onCoordination);
+    socket.on("sensorIntelligenceUpdate", onSensorIntelligence);
 
     return () => {
       socket.off("sensorUpdate", onSensor);
@@ -670,12 +789,20 @@ function DigitalTwinPage({ initialView = "overview" }) {
       socket.off("dashboardUpdate", onDashboard);
       socket.off("incidentUpdate", onIncident);
       socket.off("fleetOptimizationUpdate", onFleet);
+      socket.off("missionCoordinationUpdate", onCoordination);
+      socket.off("sensorIntelligenceUpdate", onSensorIntelligence);
     };
   }, []);
 
   const fleet = state.fleet || null;
   const fleetByDrain = fleet && fleet.byDrain ? fleet.byDrain : null;
   const fleetByRobot = fleet && fleet.byRobot ? fleet.byRobot : null;
+
+  const coordination = state.coordination || null;
+  const coordinationByDrain =
+    coordination && coordination.byDrain ? coordination.byDrain : null;
+  const coordinationByRobot =
+    coordination && coordination.byRobot ? coordination.byRobot : null;
 
   const fusedDrains = useMemo(
     () =>
@@ -742,8 +869,12 @@ function DigitalTwinPage({ initialView = "overview" }) {
   // liveBySensor kept for sensor panel parity; sensor visual state
   // already merged into byDrain via matches.
   const live = useMemo(
-    () => ({ byDrain: state.byDrain, bySensor: state.bySensor }),
-    [state.byDrain, state.bySensor]
+    () => ({
+      byDrain: state.byDrain,
+      bySensor: state.bySensor,
+      sensorIntelligence: state.sensorIntelligence || null
+    }),
+    [state.byDrain, state.bySensor, state.sensorIntelligence]
   );
 
   const requestView = (mode) =>
@@ -819,6 +950,25 @@ function DigitalTwinPage({ initialView = "overview" }) {
           <div>
             <div className="dt-stat-value">{fleet ? fleet.summary.unassignedTasks : "—"}</div>
             <div className="dt-stat-label">Unassigned tasks</div>
+          </div>
+        </div>
+
+        <div className="dt-stat">
+          <div className="dt-stat-icon" style={{ background: "#7c3aed" }}>
+            <FaNetworkWired />
+          </div>
+          <div>
+            <div className="dt-stat-value">
+              {coordination
+                ? `${coordination.summary.assignedTasks}/${coordination.summary.totalTasks}`
+                : "—"}
+            </div>
+            <div className="dt-stat-label">
+              Mission coordination
+              {coordination && coordination.summary.conflicts > 0
+                ? ` · ${coordination.summary.conflicts} conflict(s)`
+                : ""}
+            </div>
           </div>
         </div>
 
@@ -932,12 +1082,34 @@ function DigitalTwinPage({ initialView = "overview" }) {
               drain={selectedDrain}
               details={details}
               fleetUnassigned={selectedDrainFleetUnassigned}
+              coordination={
+                coordinationByDrain
+                  ? coordinationByDrain[selectedDrain.id] || null
+                  : null
+              }
             />
           )}
           {selectedRobot && (
-            <RobotDetails robot={selectedRobot} fleetInfo={selectedRobotFleet} />
+            <RobotDetails
+              robot={selectedRobot}
+              fleetInfo={selectedRobotFleet}
+              coordinationInfo={
+                coordinationByRobot
+                  ? coordinationByRobot[selectedRobot.id] || null
+                  : null
+              }
+            />
           )}
-          {selectedSensor && <SensorDetails sensor={selectedSensor} />}
+          {selectedSensor && (
+            <SensorDetails
+              sensor={selectedSensor}
+              intel={
+                state.sensorIntelligence && state.sensorIntelligence.bySensor
+                  ? state.sensorIntelligence.bySensor[selectedSensor.id] || null
+                  : null
+              }
+            />
+          )}
           {selectedStation && <StationDetails station={selectedStation} />}
           {selectedRoute && <RouteDetails route={selectedRoute} />}
         </div>

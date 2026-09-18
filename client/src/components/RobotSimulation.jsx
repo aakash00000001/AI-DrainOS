@@ -3,13 +3,17 @@ import axios from "axios";
 import {
   FaRobot,
   FaBatteryThreeQuarters,
-  FaMapMarkerAlt
+  FaMapMarkerAlt,
+  FaNetworkWired
 } from "react-icons/fa";
 import { API_URL } from "../services/api";
+import { getMissionCoordination } from "../services/missionCoordinationService";
 
 function RobotSimulation() {
 
   const [robots, setRobots] = useState([]);
+  const [coordinationByRobot, setCoordinationByRobot] = useState({});
+  const [coordinationStatus, setCoordinationStatus] = useState(null);
 
   const loadRobots = async () => {
 
@@ -27,11 +31,66 @@ function RobotSimulation() {
 
   };
 
+  // Mission coordination overlay (Update #22) — additive + advisory.
+  // Best-effort: a failed endpoint leaves robots without coordination
+  // badges instead of breaking fleet monitoring.
+  const loadCoordination = async () => {
+
+    try {
+
+      const payload = await getMissionCoordination();
+
+      const byRobot = payload && payload.robot_availability ? payload.robot_availability : [];
+
+      const map = {};
+
+      for (const item of byRobot) {
+
+        map[Number(item.robot_id)] = { ...item, planned_drain_id: null, planned_route_mode: null };
+
+      }
+
+      const assignments = payload && payload.assignments ? payload.assignments : [];
+
+      for (const assignment of assignments) {
+
+        const key = Number(assignment.robot_id);
+
+        if (map[key]) {
+
+          map[key] = {
+            ...map[key],
+            planned_drain_id: assignment.drain_id,
+            planned_route_mode: assignment.route_mode,
+            planned_task_id: assignment.task_id
+          };
+
+        }
+
+      }
+
+      setCoordinationByRobot(map);
+      setCoordinationStatus(payload ? payload.status : null);
+
+    } catch (error) {
+
+      console.log("Mission coordination overlay error:", error);
+
+    }
+
+  };
+
   useEffect(() => {
 
     loadRobots();
+    loadCoordination();
 
-    const interval = setInterval(loadRobots, 5000);
+    const interval = setInterval(() => {
+
+      loadRobots();
+      loadCoordination();
+
+    }, 5000);
 
     return () => clearInterval(interval);
 
@@ -114,6 +173,22 @@ function RobotSimulation() {
             <p>
               <FaMapMarkerAlt /> {robot.latitude}, {robot.longitude}
             </p>
+
+            {coordinationByRobot[Number(robot.id)] && (
+              <p
+                className="robot-coordination"
+                style={{ color: "#7c3aed", fontSize: "0.8rem", fontWeight: 600 }}
+              >
+                <FaNetworkWired />{" "}
+                {coordinationByRobot[Number(robot.id)].availability_state}
+                {coordinationByRobot[Number(robot.id)].planned_drain_id != null
+                  ? ` → drain ${coordinationByRobot[Number(robot.id)].planned_drain_id}`
+                  : coordinationByRobot[Number(robot.id)].target_drain_id != null
+                    ? ` → drain ${coordinationByRobot[Number(robot.id)].target_drain_id}`
+                    : ""}
+                {coordinationStatus ? ` · ${coordinationStatus}` : ""}
+              </p>
+            )}
 
           </div>
 
