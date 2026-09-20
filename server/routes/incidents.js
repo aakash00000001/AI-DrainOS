@@ -17,9 +17,22 @@ const decisionEngine = require("../services/decisionEngine");
 const { authMiddleware } = require("../middleware/auth");
 const { createRateLimiter } = require("../middleware/rateLimiter");
 const { positiveIntParam, positiveIntQuery, enumQuery } = require("../middleware/validate");
+const { auditMutation } = require("../middleware/auditMutation");
 
 const VALID_STATUSES = ["OPEN", "ACKNOWLEDGED", "RESPONDING", "RESOLVED"];
 const VALID_SEVERITIES = ["LOW", "MODERATE", "HIGH", "CRITICAL"];
+
+async function loadIncidentForAudit(req) {
+  const result = await pool.query(
+    `
+    SELECT id, drain_id, severity, title, source, status, assigned_robot_id
+    FROM incidents
+    WHERE id = $1
+    `,
+    [req.params.id]
+  );
+  return result.rows[0] || null;
+}
 
 const mutationLimiter = createRateLimiter({
   name: "incidentsMutationLimiter",
@@ -117,7 +130,15 @@ router.get("/:id", positiveIntParam("id"), async (req, res) => {
 // assigned_robot_id.
 // --------------------------------------------------
 
-router.post("/", authMiddleware, mutationLimiter, async (req, res) => {
+router.post("/", authMiddleware, mutationLimiter, auditMutation({
+  action: "INCIDENT_CREATE",
+  entityType: "INCIDENT",
+  entityId: (req, body) => (body && body.id !== undefined ? body.id : null),
+  before: async (req) => {
+    const { drain_id, title, source, severity, assigned_robot_id } = req.body || {};
+    return { drain_id, title, source, severity, assigned_robot_id };
+  }
+}), async (req, res) => {
   try {
     const { drain_id, title, description, source = "MANUAL", severity, assigned_robot_id, decision_score, decision_level } = req.body;
 
@@ -182,7 +203,12 @@ router.post("/", authMiddleware, mutationLimiter, async (req, res) => {
 // OPEN -> ACKNOWLEDGED
 // --------------------------------------------------
 
-router.put("/:id/acknowledge", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
+router.put("/:id/acknowledge", positiveIntParam("id"), authMiddleware, mutationLimiter, auditMutation({
+  action: "INCIDENT_ACKNOWLEDGE",
+  entityType: "INCIDENT",
+  entityId: (req) => req.params.id,
+  before: loadIncidentForAudit
+}), async (req, res) => {
   await transitionResponse(res, incidentService.acknowledgeIncident(req.params.id));
 });
 
@@ -191,7 +217,12 @@ router.put("/:id/acknowledge", positiveIntParam("id"), authMiddleware, mutationL
 // OPEN|ACKNOWLEDGED -> RESPONDING
 // --------------------------------------------------
 
-router.put("/:id/respond", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
+router.put("/:id/respond", positiveIntParam("id"), authMiddleware, mutationLimiter, auditMutation({
+  action: "INCIDENT_RESPOND",
+  entityType: "INCIDENT",
+  entityId: (req) => req.params.id,
+  before: loadIncidentForAudit
+}), async (req, res) => {
   await transitionResponse(res, incidentService.startResponse(req.params.id));
 });
 
@@ -201,7 +232,15 @@ router.put("/:id/respond", positiveIntParam("id"), authMiddleware, mutationLimit
 // Body: { resolution_notes?: string }
 // --------------------------------------------------
 
-router.put("/:id/resolve", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
+router.put("/:id/resolve", positiveIntParam("id"), authMiddleware, mutationLimiter, auditMutation({
+  action: "INCIDENT_RESOLVE",
+  entityType: "INCIDENT",
+  entityId: (req) => req.params.id,
+  before: loadIncidentForAudit,
+  meta: async (req) => ({
+    resolution_notes: (req.body && req.body.resolution_notes) || null
+  })
+}), async (req, res) => {
   await transitionResponse(
     res,
     incidentService.resolveIncident(req.params.id, req.body && req.body.resolution_notes)

@@ -98,6 +98,9 @@ app.use("/api/missions/coordination", require("./routes/missionCoordination"));
 app.use("/api/missions", require("./routes/missions"));
 app.use("/api/incidents", require("./routes/incidents"));
 app.use("/api/fleet-optimization", require("./routes/fleetOptimization"));
+// Operator audit must be mounted before the decision audit router,
+// whose "/:id" patterns would otherwise swallow /operator paths.
+app.use("/api/audit/operator", require("./routes/operatorAudit"));
 app.use("/api/audit", require("./routes/decisionAudit"));
 app.use("/api/historical", require("./routes/historicalIntelligence"));
 app.use("/api/charging-stations", require("./routes/chargingStations"));

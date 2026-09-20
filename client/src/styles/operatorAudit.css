@@ -1,0 +1,249 @@
+.oa-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.oa-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.oa-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.oa-title > svg {
+  font-size: 26px;
+  color: var(--accent, #2563eb);
+}
+
+.oa-title h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.oa-title p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.oa-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  background: var(--card, #ffffff);
+  color: var(--text, #1f2937);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.oa-refresh:hover {
+  background: var(--hover, #f3f4f6);
+}
+
+.oa-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.oa-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 10px;
+  background: var(--card, #ffffff);
+}
+
+.oa-summary-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.oa-summary-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.oa-summary-sub {
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.oa-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.oa-filters select,
+.oa-filters input {
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  background: var(--card, #ffffff);
+  color: var(--text, #1f2937);
+  font-size: 13px;
+}
+
+.oa-filters input {
+  width: 110px;
+}
+
+.oa-button {
+  padding: 8px 14px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  background: var(--card, #ffffff);
+  color: var(--text, #1f2937);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.oa-button:hover:not(:disabled) {
+  background: var(--hover, #f3f4f6);
+}
+
+.oa-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.oa-button.oa-primary {
+  background: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  color: #ffffff;
+}
+
+.oa-error {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.oa-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 10px;
+  background: var(--card, #ffffff);
+}
+
+.oa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.oa-table th,
+.oa-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  vertical-align: top;
+}
+
+.oa-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+  border-bottom-width: 2px;
+}
+
+.oa-row {
+  cursor: pointer;
+}
+
+.oa-row:hover {
+  background: var(--hover, #f9fafb);
+}
+
+.oa-expand-cell {
+  width: 24px;
+  color: var(--muted, #6b7280);
+}
+
+.oa-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+
+.oa-empty {
+  text-align: center;
+  padding: 28px !important;
+  opacity: 0.6;
+}
+
+.oa-detail-row td {
+  background: var(--panel, #f9fafb);
+}
+
+.oa-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.oa-detail-meta {
+  font-size: 12px;
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+.oa-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.oa-detail-grid strong {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+}
+
+.oa-detail-grid pre {
+  margin: 6px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--code-bg, #0f172a);
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.oa-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  font-size: 13px;
+}

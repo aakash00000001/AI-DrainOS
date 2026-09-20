@@ -17,6 +17,7 @@ const router = express.Router();
 
 const missionCoordinator = require("../services/missionCoordinatorService");
 const { authMiddleware } = require("../middleware/auth");
+const { auditMutation } = require("../middleware/auditMutation");
 
 // --------------------------------------------------
 // Mode validation
@@ -138,7 +139,25 @@ router.get("/analytics", async (req, res) => {
 // autonomous-> executes the plan through missionEngine.dispatchMission.
 // --------------------------------------------------
 
-router.post("/plan", authMiddleware, async (req, res) => {
+router.post("/plan", authMiddleware, auditMutation({
+  action: "MISSION_COORDINATION_PLAN",
+  entityType: "SYSTEM",
+  before: async (req) => {
+    const rawMode =
+      req.body && req.body.mode !== undefined ? req.body.mode : req.query.mode;
+    return { mode: rawMode || missionCoordinator.DEFAULT_MODE };
+  },
+  after: async (req, body) => {
+    if (!body || typeof body !== "object") return body;
+    const summarized = {};
+    for (const [key, value] of Object.entries(body)) {
+      summarized[key] = Array.isArray(value)
+        ? { count: value.length }
+        : value;
+    }
+    return summarized;
+  }
+}), async (req, res) => {
   const rawMode = req.body && req.body.mode !== undefined ? req.body.mode : req.query.mode;
   const resolved = resolveMode(rawMode);
 

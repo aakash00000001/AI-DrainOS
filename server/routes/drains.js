@@ -8,8 +8,21 @@ const pool = require("../config/db");
 const { authMiddleware } = require("../middleware/auth");
 const { createRateLimiter } = require("../middleware/rateLimiter");
 const { positiveIntParam } = require("../middleware/validate");
+const { auditMutation } = require("../middleware/auditMutation");
 
 const VALID_STATUSES = ["Normal", "Warning", "Critical"];
+
+async function loadDrainForAudit(req) {
+  const result = await pool.query(
+    `
+    SELECT id, zone_name, location, status, blockage_level, latitude, longitude
+    FROM drains
+    WHERE id = $1
+    `,
+    [req.params.id]
+  );
+  return result.rows[0] || null;
+}
 
 const mutationLimiter = createRateLimiter({
   name: "drainsMutationLimiter",
@@ -67,7 +80,11 @@ router.get("/:id", positiveIntParam("id"), async (req, res) => {
 // ==========================
 // POST - Add New Drain (auth)
 // ==========================
-router.post("/", authMiddleware, mutationLimiter, async (req, res) => {
+router.post("/", authMiddleware, mutationLimiter, auditMutation({
+  action: "DRAIN_CREATE",
+  entityType: "DRAIN",
+  entityId: (req, body) => (body && body.id !== undefined ? body.id : null)
+}), async (req, res) => {
   try {
     const {
       zone_name,
@@ -110,7 +127,12 @@ router.post("/", authMiddleware, mutationLimiter, async (req, res) => {
 // ==========================
 // PUT - Update Drain (auth)
 // ==========================
-router.put("/:id", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
+router.put("/:id", positiveIntParam("id"), authMiddleware, mutationLimiter, auditMutation({
+  action: "DRAIN_UPDATE",
+  entityType: "DRAIN",
+  entityId: (req) => req.params.id,
+  before: loadDrainForAudit
+}), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -181,7 +203,12 @@ router.put("/:id", positiveIntParam("id"), authMiddleware, mutationLimiter, asyn
 // PATCH - Quick status change (auth)
 // Used for manual "flag Critical" / "clear"
 // ==========================
-router.patch("/:id/status", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
+router.patch("/:id/status", positiveIntParam("id"), authMiddleware, mutationLimiter, auditMutation({
+  action: "DRAIN_UPDATE_STATUS",
+  entityType: "DRAIN",
+  entityId: (req) => req.params.id,
+  before: loadDrainForAudit
+}), async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -231,7 +258,12 @@ router.patch("/:id/status", positiveIntParam("id"), authMiddleware, mutationLimi
 // ==========================
 // DELETE - Remove Drain (auth)
 // ==========================
-router.delete("/:id", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
+router.delete("/:id", positiveIntParam("id"), authMiddleware, mutationLimiter, auditMutation({
+  action: "DRAIN_DELETE",
+  entityType: "DRAIN",
+  entityId: (req) => req.params.id,
+  before: loadDrainForAudit
+}), async (req, res) => {
   try {
     const { id } = req.params;
 

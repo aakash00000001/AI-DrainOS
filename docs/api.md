@@ -408,6 +408,44 @@ recent_changes, dwell }`. No second Socket.IO server is created; the Digital Twi
 
 ---
 
+## Operator Action Audit API (`/api/audit/operator`)
+
+An append-only, read-only trail of **human** operator actions written by the **non-fatal**
+`auditMutation` middleware on audited mutation routes (see
+[operator-audit.md](operator-audit.md)). Every route requires authentication **and** the
+`Admin` role (`operator` receives `403`). No write endpoint exists. Stored payloads are
+already recursively redacted before persistence, so no secret leaves the API.
+
+### `GET /api/audit/operator`
+- **Access**: `Bearer <token>` (authMiddleware) + `Admin` role required (else `403`).
+- **Query Params**: `?page=` (default 1, min 1), `?limit=` (default 20, hard cap 100),
+  `?action=` (must be a known `ACTIONS` value), `?entityType=` (must be a known
+  `ENTITY_TYPES` value), `?entityId=` (positive int), `?userId=` (positive int).
+- **Response** (200 OK): `{ "status": "READY", "page", "limit", "count", "audits": [...] }`.
+  Each row carries `id`, `requestId`, `userId`, `userEmail`, `action`, `entityType`,
+  `entityId`, `method`, `route`, `status`, `beforeData`, `afterData`, `metaData`,
+  `createdAt`. Sensitive keys are already `"[REDACTED]"` (never stored plainly).
+- **Response** (400): invalid `action` / `entityType` / `entityId` / `userId`.
+
+### `GET /api/audit/operator/summary`
+- **Access**: `Bearer <token>` + `Admin` role.
+- **Response** (200 OK): `{ "status": "READY", "summary": { total, oldest, newest,
+  byOperator, byAction, byEntityType } }`.
+
+### `GET /api/audit/operator/actions`
+- **Access**: `Bearer <token>` + `Admin` role.
+- **Response** (200 OK): `{ "status": "READY", "actions": [ ...19 known action codes ] }`.
+
+### `GET /api/audit/operator/:id`
+- **Access**: `Bearer <token>` + `Admin` role.
+- **Response** (200 OK): `{ "status": "READY", "audit": {...} }`.
+- **Response** (400): invalid id. **Response** (404): `{ "error": "Operator audit not found" }`.
+
+> **Mount order note**: `/api/audit/operator` is registered **before** the decision audit
+> router (`/api/audit`), so it is never shadowed by `/api/audit/:id`.
+
+---
+
 ## Incidents API (`/api/incidents`)
 
 An auditable emergency lifecycle: `OPEN → ACKNOWLEDGED → RESPONDING → RESOLVED`.

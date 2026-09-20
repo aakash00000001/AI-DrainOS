@@ -17,7 +17,8 @@ import {
   FaMicrochip,
   FaCloudRain,
   FaClipboardList,
-  FaHistory
+  FaHistory,
+  FaClipboardCheck
 } from "react-icons/fa";
 
 import "../../styles/sidebar.css";
@@ -179,6 +180,17 @@ function Sidebar({ activePage, onNavigate, userRole }) {
             <FaClipboardList />
             <span>Decision Audit</span>
           </li>
+
+          {/* Operator Audit (Update #27, Admin only) */}
+          {userRole === "Admin" && (
+            <li
+              className={activePage === "operatoraudit" ? "active" : ""}
+              onClick={() => onNavigate("operatoraudit")}
+            >
+              <FaClipboardCheck />
+              <span>Operator Audit</span>
+            </li>
+          )}
 
           {/* Users (Admin only) */}
           {userRole === "Admin" && (

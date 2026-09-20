@@ -8,6 +8,7 @@ const { authMiddleware } = require("../middleware/auth");
 const { dispatchMission } = require("../services/missionEngine");
 const { createRateLimiter } = require("../middleware/rateLimiter");
 const { positiveIntQuery } = require("../middleware/validate");
+const { auditMutation } = require("../middleware/auditMutation");
 
 const mutationLimiter = createRateLimiter({
   name: "missionsMutationLimiter",
@@ -109,7 +110,15 @@ router.get("/history", positiveIntQuery("robot_id"), async (req, res) => {
 //   body: { robot_id, drain_id }
 // --------------------------------------------------
 
-router.post("/dispatch", authMiddleware, mutationLimiter, async (req, res) => {
+router.post("/dispatch", authMiddleware, mutationLimiter, auditMutation({
+  action: "MISSION_DISPATCH",
+  entityType: "MISSION",
+  entityId: (req, body) => (body && body.mission && body.mission.id) || null,
+  before: async (req) => {
+    const { robot_id, drain_id } = req.body || {};
+    return { robot_id: robot_id || null, drain_id: drain_id || null };
+  }
+}), async (req, res) => {
   try {
     const { robot_id, drain_id } = req.body;
 

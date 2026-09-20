@@ -27,6 +27,7 @@ import WeatherFloodCorrelationPanel from "./components/WeatherFloodCorrelationPa
 import WeatherFloodCorrelationPage from "./components/WeatherFloodCorrelationPage";
 import DecisionAuditPanel from "./components/DecisionAuditPanel";
 import DecisionAuditPage from "./components/DecisionAuditPage";
+import OperatorAuditPage from "./components/OperatorAuditPage";
 import HistoricalIntelligencePage from "./components/HistoricalIntelligencePage";
 import HistoricalIntelligencePanel from "./components/HistoricalIntelligencePanel";
 import HistoricalIntelligenceAnalyticsSection from "./components/HistoricalIntelligenceAnalyticsSection";
@@ -568,6 +569,35 @@ function App() {
           <h2>📋 Decision Audit</h2>
 
           <DecisionAuditPage />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Operator Action Audit Trail (Update #27, Admin only)
+    if (activePage === "operatoraudit") {
+
+      if (currentUser.role !== "Admin") {
+        return (
+          <div className="page-section">
+            <h2>🚫 Access Denied</h2>
+            <div className="panel-card">
+              <p>The Operator Audit Trail is restricted to Administrators only.</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+
+        <div className="page-section">
+
+          <h2>🛡️ Operator Audit</h2>
+
+          <OperatorAuditPage />
 
         </div>
 

@@ -4,6 +4,7 @@
 -- ============================================================
 
 DROP TABLE IF EXISTS decision_audits CASCADE;
+DROP TABLE IF EXISTS operator_audits CASCADE;
 DROP TABLE IF EXISTS weather_observations CASCADE;
 DROP TABLE IF EXISTS sensor_readings CASCADE;
 DROP TABLE IF EXISTS drain_vision_inspections CASCADE;
@@ -380,3 +381,59 @@ CREATE TRIGGER trg_decision_audits_append_only
   BEFORE UPDATE OR DELETE ON decision_audits
   FOR EACH ROW
   EXECUTE FUNCTION prevent_decision_audit_mutation();
+
+-- ============================================================
+-- OPERATOR AUDITS (Operator Action Audit Trail)
+--
+-- Append-only, read-only record of HUMAN operator actions that
+-- mutate system state through the protected mutation routes.
+-- Recording is NON-FATAL middleware: an audit failure never
+-- fails the business action that triggered it. Reads, MQTT
+-- ingestion, the live-loop and AI updates are never recorded
+-- here. UPDATE/DELETE are blocked by trigger.
+-- Mirrored by database/migrations/010_operator_audits.sql.
+-- ============================================================
+
+CREATE TABLE operator_audits (
+  id SERIAL PRIMARY KEY,
+  request_id VARCHAR(64),
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_email VARCHAR(120),
+  action VARCHAR(60) NOT NULL,
+  entity_type VARCHAR(30) NOT NULL,
+  entity_id INTEGER,
+  method VARCHAR(10),
+  route TEXT,
+  status INTEGER,
+  before_data JSONB,
+  after_data JSONB,
+  meta_data JSONB,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_operator_audits_created_at
+  ON operator_audits(created_at DESC);
+
+CREATE INDEX idx_operator_audits_user_id
+  ON operator_audits(user_id);
+
+CREATE INDEX idx_operator_audits_entity
+  ON operator_audits(entity_type, entity_id);
+
+CREATE INDEX idx_operator_audits_action
+  ON operator_audits(action);
+
+CREATE OR REPLACE FUNCTION prevent_operator_audit_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'operator_audits is append-only; UPDATE and DELETE are not allowed';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_operator_audits_append_only
+  ON operator_audits;
+
+CREATE TRIGGER trg_operator_audits_append_only
+  BEFORE UPDATE OR DELETE ON operator_audits
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_operator_audit_mutation();

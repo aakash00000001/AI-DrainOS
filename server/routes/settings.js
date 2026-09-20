@@ -6,6 +6,7 @@ const logger = require("../config/logger");
 
 const { authMiddleware, adminOnly } = require("../middleware/auth");
 const { createRateLimiter } = require("../middleware/rateLimiter");
+const { auditMutation } = require("../middleware/auditMutation");
 
 const ALLOWED_KEYS = [
   "system_name",
@@ -68,7 +69,19 @@ router.get("/", async (req, res) => {
 // PUT - Update settings (partial update by key)
 // --------------------------------------------------
 
-router.put("/", authMiddleware, adminOnly, mutationLimiter, async (req, res) => {
+router.put("/", authMiddleware, adminOnly, mutationLimiter, auditMutation({
+  action: "SETTINGS_UPDATE",
+  entityType: "SETTINGS",
+  before: async () => {
+    const result = await pool.query("SELECT key, value FROM settings ORDER BY key ASC");
+    const current = {};
+    result.rows.forEach((row) => {
+      current[row.key] = row.value;
+    });
+    return current;
+  },
+  after: async (req, body) => (body && body.settings) || null
+}), async (req, res) => {
   try {
     const body = req.body || {};
 

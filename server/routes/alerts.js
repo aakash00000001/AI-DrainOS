@@ -8,9 +8,22 @@ const logger = require("../config/logger");
 const { authMiddleware } = require("../middleware/auth");
 const { createRateLimiter } = require("../middleware/rateLimiter");
 const { positiveIntParam } = require("../middleware/validate");
+const { auditMutation } = require("../middleware/auditMutation");
 
 const VALID_SEVERITIES = ["Critical", "Medium", "Low"];
 const MAX_ALERTS = 1000;
+
+async function loadAlertForAudit(req) {
+  const result = await pool.query(
+    `
+    SELECT id, drain_id, alert_type, message, severity, alert_status
+    FROM alerts
+    WHERE id = $1
+    `,
+    [req.params.id]
+  );
+  return result.rows[0] || null;
+}
 
 const mutationLimiter = createRateLimiter({
   name: "alertsMutationLimiter",
@@ -70,7 +83,11 @@ router.get("/", async (req, res) => {
 // POST - Create alert manually (auth required)
 // --------------------------------------------------
 
-router.post("/", authMiddleware, mutationLimiter, async (req, res) => {
+router.post("/", authMiddleware, mutationLimiter, auditMutation({
+  action: "ALERT_CREATE",
+  entityType: "ALERT",
+  entityId: (req, body) => (body && body.id !== undefined ? body.id : null)
+}), async (req, res) => {
   try {
     const {
       drain_id,
@@ -126,7 +143,12 @@ router.post("/", authMiddleware, mutationLimiter, async (req, res) => {
 // PUT - Update alert (resolve / reopen) (auth required)
 // --------------------------------------------------
 
-router.put("/:id", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
+router.put("/:id", positiveIntParam("id"), authMiddleware, mutationLimiter, auditMutation({
+  action: "ALERT_UPDATE",
+  entityType: "ALERT",
+  entityId: (req) => req.params.id,
+  before: loadAlertForAudit
+}), async (req, res) => {
   try {
     const { id } = req.params;
     const { alert_status } = req.body;
