@@ -27,6 +27,9 @@ import WeatherFloodCorrelationPanel from "./components/WeatherFloodCorrelationPa
 import WeatherFloodCorrelationPage from "./components/WeatherFloodCorrelationPage";
 import DecisionAuditPanel from "./components/DecisionAuditPanel";
 import DecisionAuditPage from "./components/DecisionAuditPage";
+import HistoricalIntelligencePage from "./components/HistoricalIntelligencePage";
+import HistoricalIntelligencePanel from "./components/HistoricalIntelligencePanel";
+import HistoricalIntelligenceAnalyticsSection from "./components/HistoricalIntelligenceAnalyticsSection";
 
 import RobotSimulation from "./components/RobotSimulation";
 import DrainMap from "./components/DrainMap";
@@ -389,6 +392,10 @@ function App() {
             onOpen={() => handleNavigate("decisionaudit")}
           />
 
+          <HistoricalIntelligencePanel
+            onOpen={() => handleNavigate("historical")}
+          />
+
           <DigitalTwinPreview
             onOpen={() => handleNavigate("digitaltwin")}
           />
@@ -657,6 +664,28 @@ function App() {
           <StatisticsChart />
 
           <PDFReport />
+
+          <HistoricalIntelligenceAnalyticsSection
+            onOpen={() => handleNavigate("historical")}
+          />
+
+        </div>
+
+      );
+
+    }
+
+
+    // Historical Intelligence (Update #26)
+    if (activePage === "historical") {
+
+      return (
+
+        <div className="page-section">
+
+          <h2>🗂️ Historical Intelligence</h2>
+
+          <HistoricalIntelligencePage />
 
         </div>
 

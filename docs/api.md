@@ -751,6 +751,11 @@ Common query parameters (all routes except where noted):
 See [historical-intelligence.md](historical-intelligence.md) for the full contract,
 metric definitions, data-quality labels and limitations.
 
+> **Frontend consumer:** the Historical Intelligence UI (UPDATE #26) reads these
+> endpoints via `client/src/services/historicalIntelligenceService.js` and renders
+> them on the dedicated page + dashboard/Analytics panels. See
+> [historical-intelligence-ui.md](historical-intelligence-ui.md).
+
 ### `GET /api/historical`
 - **Response** (200 OK): Full historical overview: `period`, `start_time`, `end_time`, `sensors`, `drains`, `incidents`, `missions`, `robots`, `alerts`, `patterns`, `comparison`, `drain_health`, `data_quality`, `generated_at`, `disclaimer`.
 

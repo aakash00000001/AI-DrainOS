@@ -16,7 +16,8 @@ import {
   FaNetworkWired,
   FaMicrochip,
   FaCloudRain,
-  FaClipboardList
+  FaClipboardList,
+  FaHistory
 } from "react-icons/fa";
 
 import "../../styles/sidebar.css";
@@ -150,6 +151,15 @@ function Sidebar({ activePage, onNavigate, userRole }) {
           >
             <FaChartBar />
             <span>Analytics</span>
+          </li>
+
+          {/* Historical Intelligence (Update #26) */}
+          <li
+            className={activePage === "historical" ? "active" : ""}
+            onClick={() => onNavigate("historical")}
+          >
+            <FaHistory />
+            <span>Historical Intelligence</span>
           </li>
 
           {/* AI Decisions */}
