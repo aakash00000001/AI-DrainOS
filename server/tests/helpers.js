@@ -50,6 +50,7 @@ async function resetTestDatabase(pool) {
 
 // Returns { app, pool }
 async function setup() {
+  process.env.NODE_ENV = "test";
   process.env.JWT_SECRET = process.env.JWT_SECRET || "test_secret_key";
   process.env.PGDATABASE = TEST_DB;
 

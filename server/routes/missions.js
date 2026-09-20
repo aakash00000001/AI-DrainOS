@@ -2,9 +2,18 @@ const express = require("express");
 const router = express.Router();
 
 const pool = require("../config/db");
+const config = require("../config/env");
 
 const { authMiddleware } = require("../middleware/auth");
 const { dispatchMission } = require("../services/missionEngine");
+const { createRateLimiter } = require("../middleware/rateLimiter");
+const { positiveIntQuery } = require("../middleware/validate");
+
+const mutationLimiter = createRateLimiter({
+  name: "missionsMutationLimiter",
+  windowMs: config.rateLimits.mutation.windowMs,
+  max: config.rateLimits.mutation.max
+});
 
 // --------------------------------------------------
 // GET - All missions (current + recent)
@@ -44,7 +53,7 @@ router.get("/", async (req, res) => {
 //   ?robot_id=2 &status=Completed
 // --------------------------------------------------
 
-router.get("/history", async (req, res) => {
+router.get("/history", positiveIntQuery("robot_id"), async (req, res) => {
   try {
     const { robot_id, status } = req.query;
 
@@ -100,13 +109,14 @@ router.get("/history", async (req, res) => {
 //   body: { robot_id, drain_id }
 // --------------------------------------------------
 
-router.post("/dispatch", authMiddleware, async (req, res) => {
+router.post("/dispatch", authMiddleware, mutationLimiter, async (req, res) => {
   try {
     const { robot_id, drain_id } = req.body;
 
-    if (!robot_id || !drain_id) {
+    if (!Number.isInteger(Number(robot_id)) || Number(robot_id) <= 0 ||
+        !Number.isInteger(Number(drain_id)) || Number(drain_id) <= 0) {
       return res.status(400).json({
-        error: "robot_id and drain_id are required"
+        error: "robot_id and drain_id must be positive integers"
       });
     }
 

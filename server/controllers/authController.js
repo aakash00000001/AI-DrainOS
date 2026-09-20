@@ -2,9 +2,16 @@ const crypto = require("crypto");
 const pool = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const config = require("../config/env");
+const logger = require("../config/logger");
 
-const ACCESS_TOKEN_EXPIRY = "1h";
+const ACCESS_TOKEN_EXPIRY = config.jwtExpiresIn;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+
+const handleError = (res, err) => {
+  logger.error("Auth failure", { message: err.message });
+  res.status(500).json({ message: "Internal server error" });
+};
 
 // --------------------------------------------------
 // Helpers
@@ -17,7 +24,7 @@ function signAccessToken(user) {
       email: user.email,
       role: user.role
     },
-    process.env.JWT_SECRET,
+    config.jwtSecret,
     { expiresIn: ACCESS_TOKEN_EXPIRY }
   );
 }
@@ -29,7 +36,7 @@ async function signRefreshToken(user) {
       type: "refresh",
       jti: crypto.randomUUID()
     },
-    process.env.JWT_SECRET,
+    config.jwtSecret,
     { expiresIn: `${REFRESH_TOKEN_EXPIRY_DAYS}d` }
   );
 
@@ -121,8 +128,7 @@ const register = async (req, res) => {
     });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -169,8 +175,7 @@ const login = async (req, res) => {
     });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -189,7 +194,7 @@ const refresh = async (req, res) => {
     let payload;
 
     try {
-      payload = jwt.verify(refreshToken, process.env.JWT_SECRET);
+      payload = jwt.verify(refreshToken, config.jwtSecret);
     } catch (err) {
       return res.status(401).json({ message: "Invalid refresh token" });
     }
@@ -228,8 +233,7 @@ const refresh = async (req, res) => {
     res.json({ token, user: publicUser(record) });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -248,8 +252,7 @@ const logout = async (req, res) => {
     res.json({ message: "Logged out successfully" });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -271,8 +274,7 @@ const getMe = async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -291,8 +293,7 @@ const getUsers = async (req, res) => {
     res.json(result.rows);
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -353,8 +354,7 @@ const updateUser = async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -394,8 +394,7 @@ const updateUserRole = async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -439,8 +438,7 @@ const toggleUserStatus = async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -470,8 +468,7 @@ const deleteUser = async (req, res) => {
     res.json({ message: "User deleted successfully" });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 
@@ -516,8 +513,7 @@ const changePassword = async (req, res) => {
     res.json({ message: "Password changed successfully" });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    return handleError(res, err);
   }
 };
 

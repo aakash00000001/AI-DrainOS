@@ -11,9 +11,21 @@
 const express = require("express");
 const router = express.Router();
 
+const config = require("../config/env");
 const incidentService = require("../services/incidentService");
 const decisionEngine = require("../services/decisionEngine");
 const { authMiddleware } = require("../middleware/auth");
+const { createRateLimiter } = require("../middleware/rateLimiter");
+const { positiveIntParam, positiveIntQuery, enumQuery } = require("../middleware/validate");
+
+const VALID_STATUSES = ["OPEN", "ACKNOWLEDGED", "RESPONDING", "RESOLVED"];
+const VALID_SEVERITIES = ["LOW", "MODERATE", "HIGH", "CRITICAL"];
+
+const mutationLimiter = createRateLimiter({
+  name: "incidentsMutationLimiter",
+  windowMs: config.rateLimits.mutation.windowMs,
+  max: config.rateLimits.mutation.max
+});
 
 // --------------------------------------------------
 // GET /api/incidents - list with optional filters
@@ -22,7 +34,12 @@ const { authMiddleware } = require("../middleware/auth");
 //   ?drain_id=<n>
 // --------------------------------------------------
 
-router.get("/", async (req, res) => {
+router.get(
+  "/",
+  positiveIntQuery("drain_id"),
+  enumQuery("status", VALID_STATUSES, "status"),
+  enumQuery("severity", VALID_SEVERITIES, "severity"),
+  async (req, res) => {
   try {
     const incidents = await incidentService.listIncidents({
       status: req.query.status,
@@ -55,7 +72,7 @@ router.get("/active", async (req, res) => {
 // GET /api/incidents/:id/timeline - real stored-timestamp events
 // --------------------------------------------------
 
-router.get("/:id/timeline", async (req, res) => {
+router.get("/:id/timeline", positiveIntParam("id"), async (req, res) => {
   try {
     const incident = await incidentService.getIncidentById(req.params.id);
 
@@ -74,7 +91,7 @@ router.get("/:id/timeline", async (req, res) => {
 // GET /api/incidents/:id - detail (drain + robot + route)
 // --------------------------------------------------
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", positiveIntParam("id"), async (req, res) => {
   try {
     const incident = await incidentService.getIncidentById(req.params.id);
 
@@ -100,9 +117,13 @@ router.get("/:id", async (req, res) => {
 // assigned_robot_id.
 // --------------------------------------------------
 
-router.post("/", authMiddleware, async (req, res) => {
+router.post("/", authMiddleware, mutationLimiter, async (req, res) => {
   try {
     const { drain_id, title, description, source = "MANUAL", severity, assigned_robot_id, decision_score, decision_level } = req.body;
+
+    if (source !== "AI_DECISION" && source !== "MANUAL") {
+      return res.status(400).json({ error: "source must be AI_DECISION or MANUAL" });
+    }
 
     let result;
 
@@ -161,7 +182,7 @@ router.post("/", authMiddleware, async (req, res) => {
 // OPEN -> ACKNOWLEDGED
 // --------------------------------------------------
 
-router.put("/:id/acknowledge", authMiddleware, async (req, res) => {
+router.put("/:id/acknowledge", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
   await transitionResponse(res, incidentService.acknowledgeIncident(req.params.id));
 });
 
@@ -170,7 +191,7 @@ router.put("/:id/acknowledge", authMiddleware, async (req, res) => {
 // OPEN|ACKNOWLEDGED -> RESPONDING
 // --------------------------------------------------
 
-router.put("/:id/respond", authMiddleware, async (req, res) => {
+router.put("/:id/respond", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
   await transitionResponse(res, incidentService.startResponse(req.params.id));
 });
 
@@ -180,7 +201,7 @@ router.put("/:id/respond", authMiddleware, async (req, res) => {
 // Body: { resolution_notes?: string }
 // --------------------------------------------------
 
-router.put("/:id/resolve", authMiddleware, async (req, res) => {
+router.put("/:id/resolve", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
   await transitionResponse(
     res,
     incidentService.resolveIncident(req.params.id, req.body && req.body.resolution_notes)

@@ -12,8 +12,16 @@
 const express = require("express");
 const router = express.Router();
 
+const config = require("../config/env");
 const decisionAuditService = require("../services/decisionAuditService");
 const { authMiddleware } = require("../middleware/auth");
+const { createRateLimiter } = require("../middleware/rateLimiter");
+
+const snapshotLimiter = createRateLimiter({
+  name: "auditSnapshotLimiter",
+  windowMs: config.rateLimits.mutation.windowMs,
+  max: config.rateLimits.mutation.max
+});
 
 function parsePositiveInt(value) {
   const num = Number(value);
@@ -203,7 +211,7 @@ router.get("/:id", async (req, res) => {
 // still applies - repeated identical snapshots do not spam).
 // ------------------------------------------------------------
 
-router.post("/snapshot", authMiddleware, async (req, res) => {
+router.post("/snapshot", authMiddleware, snapshotLimiter, async (req, res) => {
   try {
     const { decisionType, drainId, robotId, incidentId, signal } = req.body || {};
 

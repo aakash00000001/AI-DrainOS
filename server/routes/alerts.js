@@ -2,10 +2,26 @@ const express = require("express");
 const router = express.Router();
 
 const pool = require("../config/db");
+const config = require("../config/env");
+const logger = require("../config/logger");
 
 const { authMiddleware } = require("../middleware/auth");
+const { createRateLimiter } = require("../middleware/rateLimiter");
+const { positiveIntParam } = require("../middleware/validate");
 
 const VALID_SEVERITIES = ["Critical", "Medium", "Low"];
+const MAX_ALERTS = 1000;
+
+const mutationLimiter = createRateLimiter({
+  name: "alertsMutationLimiter",
+  windowMs: config.rateLimits.mutation.windowMs,
+  max: config.rateLimits.mutation.max
+});
+
+const handleError = (res, err) => {
+  logger.error("Alerts route error", { message: err.message });
+  res.status(500).json({ error: "Internal server error" });
+};
 
 // --------------------------------------------------
 // GET - All alerts (optional ?status=Open|Resolved)
@@ -38,6 +54,7 @@ router.get("/", async (req, res) => {
         ON a.drain_id = d.id
       ${statusFilter}
       ORDER BY a.id DESC
+      LIMIT ${MAX_ALERTS}
       `,
       params
     );
@@ -45,7 +62,7 @@ router.get("/", async (req, res) => {
     res.json(result.rows);
 
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 });
 
@@ -53,7 +70,7 @@ router.get("/", async (req, res) => {
 // POST - Create alert manually (auth required)
 // --------------------------------------------------
 
-router.post("/", authMiddleware, async (req, res) => {
+router.post("/", authMiddleware, mutationLimiter, async (req, res) => {
   try {
     const {
       drain_id,
@@ -65,6 +82,12 @@ router.post("/", authMiddleware, async (req, res) => {
     if (!drain_id || !alert_type || !message) {
       return res.status(400).json({
         error: "drain_id, alert_type and message are required"
+      });
+    }
+
+    if (!Number.isInteger(Number(drain_id)) || Number(drain_id) <= 0) {
+      return res.status(400).json({
+        error: "drain_id must be a positive integer"
       });
     }
 
@@ -95,7 +118,7 @@ router.post("/", authMiddleware, async (req, res) => {
     res.status(201).json(result.rows[0]);
 
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 });
 
@@ -103,7 +126,7 @@ router.post("/", authMiddleware, async (req, res) => {
 // PUT - Update alert (resolve / reopen) (auth required)
 // --------------------------------------------------
 
-router.put("/:id", authMiddleware, async (req, res) => {
+router.put("/:id", positiveIntParam("id"), authMiddleware, mutationLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const { alert_status } = req.body;
@@ -131,7 +154,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 });
 

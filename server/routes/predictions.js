@@ -3,6 +3,8 @@ const router = express.Router();
 const axios = require("axios");
 const multer = require("multer");
 const pool = require("../config/db");
+const config = require("../config/env");
+const logger = require("../config/logger");
 
 const floodRisk = require("../services/floodRiskService");
 const floodForecast = require("../services/floodForecastService");
@@ -12,10 +14,18 @@ const decisionEngine = require("../services/decisionEngine");
 const robotPathPlanning = require("../services/robotPathPlanningService");
 const mqttService = require("../services/mqttService");
 
-const AI_SERVICE_URL =
-  process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
+const { authMiddleware } = require("../middleware/auth");
+const { createRateLimiter } = require("../middleware/rateLimiter");
+
+const AI_SERVICE_URL = config.aiServiceUrl;
 
 let aiUnreachableLoggedAt = null;
+
+const visionRateLimiter = createRateLimiter({
+  name: "visionRateLimiter",
+  windowMs: config.rateLimits.vision.windowMs,
+  max: config.rateLimits.vision.max
+});
 
 // --------------------------------------------------
 // Vision image upload (secure multipart handling)
@@ -62,7 +72,7 @@ function logAiUnreachable(message) {
   const now = Date.now();
 
   if (!aiUnreachableLoggedAt || now - aiUnreachableLoggedAt > 60000) {
-    console.log("⚠️ AI service unreachable, using fallback:", message);
+    logger.warn("AI service unreachable, using fallback", { message });
     aiUnreachableLoggedAt = now;
   }
 }
@@ -166,12 +176,10 @@ router.get("/", async (req, res) => {
 
  catch (err) {
 
-  console.log("========== AI ERROR ==========");
+  logger.error("Prediction error", { message: err.message });
 
-  console.log("Message:", err.message);
-
-  res.status(500).json({
-    error: err.response?.data || err.message
+  res.status(503).json({
+    error: "Prediction service unavailable"
   });
 
 }
@@ -380,11 +388,12 @@ router.get("/robot-route/:drainId", async (req, res) => {
 // QUALITY results. The image is processed in memory only - never
 // stored on disk or in the database (metadata is stored only).
 //
-// Same public model as GET /api/predictions (no auth). Invalid
-// drain id -> 400, unknown drain -> 404, invalid image -> 400.
+// Authenticated (uploads consume bandwidth; rate-limited) and
+// rate-limited. Invalid drain id -> 400, unknown drain -> 404,
+// invalid image -> 400.
 // --------------------------------------------------
 
-router.post("/vision/:drainId", handleVisionUpload, async (req, res) => {
+router.post("/vision/:drainId", authMiddleware, visionRateLimiter, handleVisionUpload, async (req, res) => {
   try {
     const drainId = Number(req.params.drainId);
 

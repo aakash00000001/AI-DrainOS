@@ -1,8 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
+const config = require("../config/env");
+const logger = require("../config/logger");
 
 const { authMiddleware, adminOnly } = require("../middleware/auth");
+const { createRateLimiter } = require("../middleware/rateLimiter");
 
 const ALLOWED_KEYS = [
   "system_name",
@@ -15,6 +18,26 @@ const ALLOWED_KEYS = [
   "risk_high_min",
   "risk_critical_min"
 ];
+
+// Per-key validation rules. Thresholds are percentages; intervals are
+// positive seconds; notification_enabled is a boolean.
+const RULES = {
+  critical_threshold: (v) => Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100,
+  warning_threshold: (v) => Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100,
+  battery_low_threshold: (v) => Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100,
+  sensor_sim_interval: (v) => Number.isInteger(Number(v)) && Number(v) > 0,
+  notification_enabled: (v) => v === true || v === false || v === "true" || v === "false",
+  system_name: (v) => typeof v === "string" && v.trim().length > 0 && v.length <= 100,
+  risk_moderate_min: (v) => Number.isFinite(Number(v)) && Number(v) > 0,
+  risk_high_min: (v) => Number.isFinite(Number(v)) && Number(v) > 0,
+  risk_critical_min: (v) => Number.isFinite(Number(v)) && Number(v) > 0
+};
+
+const mutationLimiter = createRateLimiter({
+  name: "settingsMutationLimiter",
+  windowMs: config.rateLimits.mutation.windowMs,
+  max: config.rateLimits.mutation.max
+});
 
 // --------------------------------------------------
 // GET - All settings (key -> value)
@@ -36,7 +59,7 @@ router.get("/", async (req, res) => {
     res.json(settings);
 
   } catch (err) {
-    console.log(err);
+    logger.error("Settings GET failed", { message: err.message });
     res.status(500).json({ error: "Server Error" });
   }
 });
@@ -45,7 +68,7 @@ router.get("/", async (req, res) => {
 // PUT - Update settings (partial update by key)
 // --------------------------------------------------
 
-router.put("/", authMiddleware, adminOnly, async (req, res) => {
+router.put("/", authMiddleware, adminOnly, mutationLimiter, async (req, res) => {
   try {
     const body = req.body || {};
 
@@ -56,6 +79,13 @@ router.put("/", authMiddleware, adminOnly, async (req, res) => {
     if (entries.length === 0) {
       return res.status(400).json({
         error: "No valid settings provided"
+      });
+    }
+
+    const invalid = entries.filter(([key, value]) => !RULES[key](value));
+    if (invalid.length > 0) {
+      return res.status(400).json({
+        error: `Invalid value for: ${invalid.map(([k]) => k).join(", ")}`
       });
     }
 
@@ -88,7 +118,7 @@ router.put("/", authMiddleware, adminOnly, async (req, res) => {
     });
 
   } catch (err) {
-    console.log(err);
+    logger.error("Settings PUT failed", { message: err.message });
     res.status(500).json({ error: "Server Error" });
   }
 });

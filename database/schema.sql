@@ -228,6 +228,8 @@ CREATE TABLE alerts (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX idx_alerts_drain_status ON alerts(drain_id, alert_status);
+
 -- ============================================================
 -- INCIDENTS (Autonomous Emergency Response & Incident Intelligence)
 --
@@ -293,6 +295,8 @@ CREATE TABLE missions (
   completed_time TIMESTAMP,
   progress INTEGER DEFAULT 0
 );
+
+CREATE INDEX idx_missions_robot_status ON missions(robot_id, mission_status);
 
 -- ============================================================
 -- CHARGING STATIONS

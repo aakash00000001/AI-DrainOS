@@ -26,6 +26,7 @@ const { setup } = require("./helpers");
 
 let app;
 let pool;
+let token;
 let vision;
 let socketHub;
 
@@ -112,6 +113,15 @@ before(async () => {
   // Require after setup so config/db binds to the test database
   vision = require("../services/drainVisionService");
   socketHub = require("../services/socketHub");
+
+  // POST /api/predictions/vision/:drainId is auth-protected; authenticate
+  // with the seeded test admin using the project's standard login flow.
+  const login = await request(app).post("/api/auth/login").send({
+    email: "admin@aidrain.com",
+    password: "admin123"
+  });
+
+  token = login.body.token;
 });
 
 after(async () => {
@@ -282,6 +292,7 @@ test("9. Image-quality gate: black and tiny images are rejected honestly", () =>
 test("10. POST vision: clear image yields READY LOW and persists", async () => {
   const res = await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", brightImage, { filename: "clear.png", contentType: "image/png" })
     .expect(200);
 
@@ -309,6 +320,7 @@ test("10. POST vision: clear image yields READY LOW and persists", async () => {
 test("11. POST vision: unknown drain returns 404", async () => {
   const res = await request(app)
     .post("/api/predictions/vision/9999")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", brightImage, { filename: "clear.png", contentType: "image/png" })
     .expect(404);
 
@@ -318,6 +330,7 @@ test("11. POST vision: unknown drain returns 404", async () => {
 test("12. POST vision: missing image returns 400", async () => {
   const res = await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .send({})
     .expect(400);
 
@@ -327,6 +340,7 @@ test("12. POST vision: missing image returns 400", async () => {
 test("13. POST vision: garbage bytes (valid PNG name) rejected as 400", async () => {
   const res = await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", Buffer.from("this is not an image at all"), {
       filename: "fake.png",
       contentType: "image/png"
@@ -341,6 +355,7 @@ test("14. POST vision: oversize image rejected with 5 MB limit message", async (
 
   const res = await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", big, { filename: "big.png", contentType: "image/png" })
     .expect(400);
 
@@ -354,6 +369,7 @@ test("14. POST vision: oversize image rejected with 5 MB limit message", async (
 test("15. POST vision: black image returns INSUFFICIENT_IMAGE_QUALITY", async () => {
   const res = await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", blackImage, { filename: "black.png", contentType: "image/png" })
     .expect(200);
 
@@ -371,6 +387,7 @@ test("15. POST vision: black image returns INSUFFICIENT_IMAGE_QUALITY", async ()
 test("16. POST vision: undecodable format reports INSUFFICIENT honestly", async () => {
   const res = await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", fakeJpegBytes, { filename: "photo.jpg", contentType: "image/jpeg" })
     .expect(200);
 
@@ -415,6 +432,7 @@ test("18. Alert: HIGH inspection creates a single Open Medium alert", async () =
 
   await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", checkerImage, { filename: "debris.png", contentType: "image/png" })
     .expect(200);
 
@@ -430,6 +448,7 @@ test("18. Alert: HIGH inspection creates a single Open Medium alert", async () =
   // Second inspection must NOT create a second alert (dedupe)
   await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", checkerImage, { filename: "debris2.png", contentType: "image/png" })
     .expect(200);
 
@@ -443,6 +462,7 @@ test("18. Alert: HIGH inspection creates a single Open Medium alert", async () =
 test("19. Alert: clear inspection resolves the open Vision Inspection alert", async () => {
   await request(app)
     .post("/api/predictions/vision/1")
+    .set("Authorization", `Bearer ${token}`)
     .attach("image", brightImage, { filename: "clear.png", contentType: "image/png" })
     .expect(200);
 
